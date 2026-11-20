@@ -77,3 +77,28 @@ class Hybrid:
         groups = [engine.search(query, max(12, limit)) for engine in (self.lexical, self.dense)]
         lookup = {row.id: row for rows in groups for row in rows}
         return [lookup[key] for key in rrf([[row.id for row in rows] for rows in groups])[:limit]]
+
+
+class SparseLSA:
+    """Fit a dense latent representation without materializing an entire TF-IDF matrix."""
+
+    def __init__(self, corpus, dimensions=128):
+        from sklearn.decomposition import TruncatedSVD
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.preprocessing import normalize
+
+        self.corpus = corpus
+        self.normalizer = normalize
+        self.vectorizer = TfidfVectorizer(tokenizer=tokens, token_pattern=None, lowercase=False, min_df=2)
+        matrix = self.vectorizer.fit_transform(row.title + " " + row.text for row in corpus)
+        self.projection = TruncatedSVD(n_components=min(dimensions, matrix.shape[1] - 1, matrix.shape[0] - 1),
+                                        random_state=0, n_iter=5)
+        self.vectors = normalize(self.projection.fit_transform(matrix))
+
+    def search(self, query, limit=10):
+        terms = self.vectorizer.transform([query])
+        if terms.nnz == 0:
+            return []
+        vector = self.normalizer(self.projection.transform(terms))[0]
+        scores = self.vectors @ vector
+        return [self.corpus[index] for index in scores.argsort(kind="stable")[::-1] if scores[index] > 0][:limit]

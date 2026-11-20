@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+from time import perf_counter
 from typing import Annotated, Literal
 from uuid import uuid4
 
@@ -13,13 +14,14 @@ from app.analysis import compare, observation_data
 from app.auth import CurrentUser, Db, require_project
 from app.config import settings
 from app.db import Session
-from app.models import Asset, AuditEvent, Document, Job, JobEvent, Observation, Paper, Passage, Section, Usage
+from app.models import Asset, AuditEvent, Document, DocumentArtifact, Job, JobEvent, Membership, Observation, Paper, Passage, Project, RetrievalRun, Section, Usage
 from app.schemas import EvidenceResponse, JobResponse, RetrievalResponse
 from app.reports import MIME, references
 from app.storage import get, put, remove
 from app.worker import schedule
 from app.workspace import CleanTitle
 from connectors.scholarly import normalize_doi
+from ingestion.domains import Domain
 from rag.engine import plan
 from rag.repository import evidence, evidence_query, observation_query, retrieve
 
@@ -31,6 +33,7 @@ class Question(BaseModel):
 
 
 class RetrievalRequest(Question):
+    domain: Domain = Domain.AUTO
     limit: int = Field(10, ge=1, le=30)
     document_ids: list[str] = Field(default_factory=list, max_length=50)
     year: int | None = Field(None, ge=1500, le=2200)
@@ -47,6 +50,7 @@ class RetrievalRequest(Question):
 
 
 class ResearchRequest(Question):
+    domain: Domain = Domain.AUTO
     external_model: bool = False
     discover: bool = False
     synthesize: bool = False
@@ -57,6 +61,7 @@ class Decision(BaseModel):
 
 
 class Comparison(BaseModel):
+    domain: Domain = Domain.AUTO
     document_ids: list[str] = Field(default_factory=list, max_length=50)
     metric: str = Field(min_length=2, max_length=100)
 
@@ -165,6 +170,20 @@ def passages(project_id: str, document_id: str, db: Db, user: CurrentUser, offse
     return [evidence(row).to_dict() for row in rows]
 
 
+@router.get("/projects/{project_id}/papers/{document_id}/structure")
+def document_structure(project_id: str, document_id: str, db: Db, user: CurrentUser, offset: int = 0):
+    require_project(db, user, project_id)
+    document = db.scalar(select(Document).where(Document.id == document_id, Document.project_id == project_id))
+    if document is None:
+        raise HTTPException(404, "Paper not found")
+    rows = db.execute(select(DocumentArtifact, Passage).join(Passage, Passage.id == DocumentArtifact.passage_id)
+                      .where(DocumentArtifact.document_id == document_id).order_by(DocumentArtifact.ordinal)
+                      .offset(max(0, offset)).limit(20))
+    return {"bibliography": document.bibliography or {}, "licence": document.licence_url,
+            "artifacts": [{"id": artifact.id, "kind": artifact.kind, "page": passage.page, "anchor": passage.anchor,
+                           "passage_id": passage.id, "data": artifact.payload} for artifact, passage in rows]}
+
+
 @router.get("/projects/{project_id}/jobs", response_model=list[JobResponse])
 def project_jobs(project_id: str, db: Db, user: CurrentUser):
     require_project(db, user, project_id)
@@ -186,14 +205,18 @@ def timeline(job_id: str, db: Db, user: CurrentUser):
 
 @router.get("/jobs/{job_id}/events")
 async def events(job_id: str, db: Db, user: CurrentUser):
-    require_job(db, user, job_id)
+    project_id = require_job(db, user, job_id).project_id
+    user_id = user.id
     db.close()
 
     async def stream():
         previous = None
         for _ in range(120):
             with Session() as session:
-                job = session.get(Job, job_id)
+                job = session.scalar(select(Job).join(Project, Project.id == Job.project_id)
+                                     .join(Membership, Membership.organization_id == Project.organization_id)
+                                     .where(Job.id == job_id, Project.id == project_id,
+                                            Membership.user_id == user_id, Project.pending_deletion.is_(False)))
                 if job is None:
                     break
                 event = job_data(job)
@@ -228,11 +251,16 @@ def decision(job_id: str, body: Decision, db: Db, user: CurrentUser, tasks: Back
 @router.post("/projects/{project_id}/retrieve", response_model=RetrievalResponse)
 def retrieval(project_id: str, body: RetrievalRequest, db: Db, user: CurrentUser):
     require_project(db, user, project_id)
+    route = plan(body.query)
+    started = perf_counter()
     try:
         rows = retrieve(db, project_id, **body.model_dump())
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
-    return {"intent": plan(body.query).intent, "evidence": [row.to_dict() for row in rows]}
+    db.add(RetrievalRun(project_id=project_id, intent=route.intent, routes=list(route.routes), returned=len(rows),
+                        elapsed_ms=(perf_counter() - started) * 1000))
+    db.commit()
+    return {"intent": route.intent, "evidence": [row.to_dict() for row in rows]}
 
 
 @router.get("/evidence/{passage_id}", response_model=EvidenceResponse)
@@ -260,9 +288,11 @@ def research(project_id: str, body: ResearchRequest, db: Db, user: CurrentUser, 
 
 
 @router.get("/projects/{project_id}/observations")
-def observations(project_id: str, db: Db, user: CurrentUser, metric: str | None = None, offset: int = 0):
+def observations(project_id: str, db: Db, user: CurrentUser, metric: str | None = None, offset: int = 0, domain: Domain = Domain.AUTO):
     require_project(db, user, project_id)
     query = observation_query(project_id)
+    if domain != Domain.AUTO:
+        query = query.where(Observation.domain == domain)
     if metric:
         query = query.where(Observation.metric == metric.lower())
     return [observation_data(row, doc) for row, doc in db.execute(
@@ -272,7 +302,7 @@ def observations(project_id: str, db: Db, user: CurrentUser, metric: str | None 
 @router.post("/projects/{project_id}/compare")
 def comparison(project_id: str, body: Comparison, db: Db, user: CurrentUser):
     require_project(db, user, project_id)
-    return compare(db, project_id, body.document_ids, body.metric)
+    return compare(db, project_id, body.document_ids, body.metric, body.domain)
 
 
 @router.post("/projects/{project_id}/reports", status_code=202, response_model=JobResponse)

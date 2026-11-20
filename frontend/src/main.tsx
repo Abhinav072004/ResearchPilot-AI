@@ -3,10 +3,17 @@ import type { FormEvent, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Activity as ActivityIcon, ArrowDownToLine, ArrowRight, ArrowUpRight, BookOpen, ChevronRight, CircleHelp, FileText, FlaskConical, FolderOpen, Layers3, LibraryBig, LogOut, Menu, Plus, Search, Settings, X } from 'lucide-react';
 import { api, json, safeUrl } from './api';
-import type { Account, Activity, Comparison, Evidence, Job, Named, Observation, Source } from './api';
+import type { Account, Activity, Comparison, DocumentStructure, Evidence, Job, Named, Observation, Source, TableCell, Team } from './api';
 import './style.css';
 
 type View = 'Research' | 'Literature' | 'Library' | 'Data explorer' | 'Reports' | 'Activity' | 'Settings';
+const domains = [
+  ['auto', 'All disciplines'], ['chemical_engineering', 'Chemical engineering'], ['energy', 'Energy'],
+  ['computer_science', 'Computer science'], ['medicine', 'Medicine'], ['physics', 'Physics'],
+  ['biology', 'Biology'], ['environmental_science', 'Environmental science'],
+  ['materials_science', 'Materials science'], ['business', 'Business'],
+] as const;
+
 const views = [
   { name: 'Research', icon: FlaskConical }, { name: 'Literature', icon: Search },
   { name: 'Library', icon: LibraryBig }, { name: 'Data explorer', icon: Layers3 },
@@ -60,6 +67,23 @@ function SourceList({rows, onDoi}: {rows: Source[]; onDoi: (doi: string) => void
   </article>)}</div>;
 }
 
+function StructuredTable({cells, caption}: {cells: TableCell[]; caption?: string}) {
+  const rows = new Map<number, TableCell[]>();
+  cells.forEach(cell => {
+    const row = rows.get(cell.row) ?? [];
+    row.push(cell);
+    rows.set(cell.row, row);
+  });
+  return <div className="scroll"><table>{caption && <caption>{caption}</caption>}<tbody>
+    {[...rows.entries()].sort(([a], [b]) => a - b).map(([row, columns]) => <tr key={row}>
+      {[...columns].sort((a, b) => a.column - b.column).map(cell => {
+        const Tag = cell.header ? 'th' : 'td';
+        return <Tag key={cell.column} rowSpan={cell.rowspan} colSpan={cell.colspan}>{cell.text}</Tag>;
+      })}
+    </tr>)}
+  </tbody></table></div>;
+}
+
 function ResultsTable({rows, inspect}: {rows: Observation[]; inspect: (id: string) => void}) {
   if (!rows.length) return <p className="muted">No observations available.</p>;
   return <div className="scroll"><table><thead><tr><th>Paper</th><th>Metric</th><th>Value</th><th>Study</th><th>Conditions</th><th>Evidence</th></tr></thead>
@@ -86,6 +110,8 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
   const [lastSearch, setLastSearch] = useState({q: '', provider: 'crossref'});
   const [papers, setPapers] = useState<Named[]>([]);
   const [passages, setPassages] = useState<Evidence[]>([]);
+  const [structure, setStructure] = useState<DocumentStructure>();
+  const [team, setTeam] = useState<Team>();
   const [observations, setObservations] = useState<Observation[]>([]);
   const [comparison, setComparison] = useState<Comparison>();
   const [selected, setSelected] = useState<Evidence>();
@@ -130,8 +156,8 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
         const rows = await api<Job[]>(scope + '/jobs');
         if (active) setJobs(rows);
       } else if (view === 'Settings') {
-        const rows = await api<typeof usage>(scope + '/usage');
-        if (active) setUsage(rows);
+        const [rows, members] = await Promise.all([api<typeof usage>(scope + '/usage'), api<Team>(scope + '/team')]);
+        if (active) { setUsage(rows); setTeam(members); }
       } else if (view === 'Research') {
         const rows = await api<Named[]>(scope + '/conversations');
         if (active) setConversations(rows);
@@ -153,7 +179,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
   }, [job?.id, job?.status]);
 
   function switchProject(id: string) {
-    setProject(id); setJob(undefined); setSelected(undefined); setPassages([]);
+    setProject(id); setJob(undefined); setSelected(undefined); setPassages([]); setStructure(undefined); setTeam(undefined);
     setComparison(undefined); setActivity([]); setJobs([]); setPapers([]); setObservations([]);
     setConversation(''); setConversations([]); setMessages([]); setUsage([]); setNotice(''); setError('');
   }
@@ -182,7 +208,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
         const item = await api<{messages: typeof messages}>('/conversations/' + conversation);
         setMessages(item.messages);
       }
-      setJob(await api<Job>(scope + '/research', json({query, discover: data.has('discover'), external_model: data.has('model') || data.has('synthesis'), synthesize: data.has('synthesis')})));
+      setJob(await api<Job>(scope + '/research', json({query, domain: data.get('domain'), discover: data.has('discover'), external_model: data.has('model') || data.has('synthesis'), synthesize: data.has('synthesis')})));
     });
   }
 
@@ -280,8 +306,10 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
             <label htmlFor="question">Research question</label>
             <textarea id="question" value={query} onChange={event => setQuery(event.target.value)}
               placeholder="What evidence supports your research question?" required minLength={2} maxLength={1000}/>
+            <label>Research domain<select name="domain">{domains.map(([value, label]) =>
+              <option key={value} value={value}>{label}</option>)}</select></label>
             <div className="form-footer"><div className="actions">
-              <label className="check"><input type="checkbox" name="discover"/> Scholarly discovery</label>
+              <label className="check"><input type="checkbox" name="discover"/> Discover and import licensed papers</label>
               <label className="check"><input type="checkbox" name="model"/> External reranking</label>
               <label className="check"><input type="checkbox" name="synthesis"/> External synthesis</label>
             </div><button className="primary" disabled={busy || ['queued', 'running'].includes(job?.status ?? '')}>Run research <ArrowRight size={17}/></button></div>
@@ -303,6 +331,8 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
             {job.status === 'awaiting_approval' && panel(<><p>{job.result?.approval?.purpose}</p><div className="actions">
               {[true, false].map(approved => <button key={String(approved)} disabled={busy} onClick={() => void run(async () =>
                 setJob(await api<Job>('/jobs/' + job.id + '/approval', json({approved}))))}>{approved ? 'Approve' : 'Decline'}</button>)}</div></>)}
+            {job.result?.imported_papers?.length ? <p className="notice">Full text ready for {job.result.imported_papers.length}
+              {job.result.imported_papers.length === 1 ? ' paper.' : ' papers.'}</p> : null}
             {job.result?.claims?.map((claim, index) => <article key={claim.claim_id} className="card evidence-card">
               {claim.type === 'model_checked_synthesis' && <h3>Model-checked synthesis</h3>}
               <blockquote>{claim.text}</blockquote>
@@ -356,10 +386,20 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
           {job?.kind === 'ingest' && <p className="notice" role="status">Ingestion {job.status}{job.error && ' · ' + job.error}</p>}
           {papers.length === 0 && <p className="muted">Your project library is empty.</p>}
           {papers.map(paper => <div className="actions" key={paper.id}>
-            <button onClick={() => void run(async () =>
-              setPassages(await api<Evidence[]>(scope + '/papers/' + paper.id + '/passages')))}><BookOpen size={16}/>{paper.title}</button>
+            <button onClick={() => void run(async () => {
+              const root = scope + '/papers/' + paper.id;
+              const [text, details] = await Promise.all([api<Evidence[]>(root + '/passages'), api<DocumentStructure>(root + '/structure')]);
+              setPassages(text); setStructure(details);
+            })}><BookOpen size={16}/>{paper.title}</button>
             <a href={'/api/v1' + scope + '/papers/' + paper.id + '/original'}><ArrowDownToLine size={14}/> Original</a>
           </div>)}
+          {structure?.bibliography.abstract && <article className="card"><h3>Abstract</h3>
+            <p>{structure.bibliography.abstract}</p></article>}
+          {structure?.artifacts.map(entry => <article className="card" key={entry.id}>
+            <h3>{entry.data.label || entry.kind.replaceAll('_', ' ')}{entry.page ? ' · p. ' + entry.page : ''}</h3>
+            {entry.data.cells ? <StructuredTable cells={entry.data.cells} caption={entry.data.caption}/> : <p>{entry.data.text}</p>}
+            <button className="text-button" onClick={() => inspect(entry.passage_id)}>Inspect evidence</button>
+          </article>)}
           {passages.map(entry => <article className="card" key={entry.id}><h3>{entry.section}{entry.page ? ' · p. ' + entry.page : ''}</h3>
             <p>{entry.text}</p><button className="text-button" onClick={() => inspect(entry.id)}>Inspect evidence</button></article>)}
         </>}
@@ -400,7 +440,37 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
                 {row.priced_calls < row.tracked_calls && row.estimated_cost !== null ? ' (partial)' : ''}</td></tr>)}</tbody>
           </table></div> : <p className="muted">This project has no recorded model calls.</p>}
         </>)}
-        {view === 'Settings' && activeProject && panel(<>
+        {view === 'Settings' && project && team?.role === 'owner' && panel(<>
+          <h2>Workspace access</h2>
+          <p>Workspace roles apply to all projects in this workspace.</p>
+          <form className="inline" onSubmit={event => {
+            event.preventDefault(); const form = event.currentTarget; const values = new FormData(form);
+            void run(async () => {
+              await api(scope + '/team', json({email: values.get('email'), role: values.get('role')}));
+              setTeam(await api<Team>(scope + '/team')); form.reset();
+            });
+          }}>
+            <label>Registered email<input type="email" name="email" required/></label>
+            <label>Role<select name="role"><option value="viewer">Viewer</option><option value="editor">Editor</option></select></label>
+            <button disabled={busy}>Grant access</button>
+          </form>
+          {team.members.map(member => <div className="row" key={member.id}>
+            <span>{member.email}</span>{member.role === 'owner' ? <span>Owner</span> : <div className="actions">
+              <select aria-label={'Role for ' + member.email} value={member.role} disabled={busy} onChange={event => {
+                const role = event.target.value;
+                void run(async () => {
+                  await api(scope + '/team/' + member.id, json({role}, 'PATCH'));
+                  setTeam(await api<Team>(scope + '/team'));
+                });
+              }}><option value="viewer">Viewer</option><option value="editor">Editor</option></select>
+              <button disabled={busy} onClick={() => void run(async () => {
+                await api(scope + '/team/' + member.id, {method: 'DELETE'});
+                setTeam(await api<Team>(scope + '/team'));
+              })}>Revoke access</button>
+            </div>}
+          </div>)}
+        </>)}
+        {view === 'Settings' && activeProject && team?.role !== 'viewer' && panel(<>
           <h2>Project settings</h2>
           <form className="inline" key={project} onSubmit={event => {
             event.preventDefault(); const title = new FormData(event.currentTarget).get('title');
@@ -411,7 +481,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
             });
           }}><label>Project title<input name="title" defaultValue={activeProject.title} required maxLength={150}/></label>
             <button disabled={busy}>Save title</button></form>
-          <button className="delete-button" disabled={busy} onClick={() => {
+          {team?.role === 'owner' && <button className="delete-button" disabled={busy} onClick={() => {
             if (!window.confirm('Delete this project, its source files, and all reports?')) return;
             void run(async () => {
               await api(scope, {method: 'DELETE'});
@@ -419,7 +489,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
               setProjects(remaining); switchProject(remaining[0]?.id ?? '');
               setNotice('Project deletion scheduled.');
             });
-          }}>Delete project</button>
+          }}>Delete project</button>}
         </>)}
         {view === 'Settings' && panel(<><h2>{account.email}</h2><button onClick={() => void run(async () => {
           await api('/auth/logout', {method: 'POST'}); onLogout();

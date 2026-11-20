@@ -27,6 +27,9 @@ JSON endpoints use /api/v1. Collection endpoints take pagination where applicabl
 | POST /projects/{project_id}/retrieve | Query and filters → ranked evidence |
 | POST /projects/{project_id}/research | Query and optional research settings → run job |
 | POST /jobs/{id}/approval | Approval decision → updated run |
+| GET /projects/{project_id}/papers/{document_id}/structure | → bibliography, licence, and paginated table, figure, formula and reference records |
+| GET, POST /projects/{project_id}/team | → workspace roles or grant a registered account access |
+| PATCH, DELETE /projects/{project_id}/team/{member_id} | → owner changes or revokes workspace access |
 | GET /evidence/{id} | → authorized original passage and provenance |
 | GET /projects/{project_id}/observations | Metric and unit filters → source-linked results |
 | POST /projects/{project_id}/compare | Paper IDs and metric → matched findings and gaps |
@@ -36,3 +39,6 @@ JSON endpoints use /api/v1. Collection endpoints take pagination where applicabl
 | GET /health/live, /health/ready | → process and dependency health |
 
 The generated OpenAPI schema describes the implemented contract. The architecture table includes later endpoints.
+
+
+A research request can set `discover: true` to verify metadata leads and fetch licensed full text within the run budget. `domain` selects a structured-data profile and defaults to `auto`. SSE job snapshots can carry verified excerpts before synthesis finishes. The workspace owner grants roles to existing accounts. Roles apply to the workspace's projects. Membership is rechecked while a stream is open.

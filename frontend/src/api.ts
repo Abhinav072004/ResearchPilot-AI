@@ -11,9 +11,18 @@ export interface Source {
   journal: string | null; year: string | number | null; access: string;
   url: string | null; retracted?: boolean;
 }
+export interface TableCell { row: number; column: number; rowspan: number; colspan: number; header: boolean; text: string }
+export interface DocumentStructure {
+  bibliography: { title?: string; abstract?: string; authors?: string[]; journal?: string; year?: string };
+  licence: string | null;
+  artifacts: {id: string; kind: string; page: number | null; passage_id: string;
+    data: {caption?: string; cells?: TableCell[]; label?: string; text?: string}}[];
+}
+export interface TeamMember { id: string; email: string; role: 'owner' | 'editor' | 'viewer' }
+export interface Team { role: TeamMember['role']; members: TeamMember[] }
 export interface Observation {
   id: string; passage_id: string; title: string; metric: string; value: string; unit: string;
-  study_type: string; conditions: Record<string, string>; confidence: string;
+  study_type: string; domain: string; measurement_anchor?: {row: number; column: number}; conditions: Record<string, string>; confidence: string;
 }
 export interface Comparison {
   matched: {rows: Observation[]; observed_span: string; unit: string}[];
@@ -22,7 +31,7 @@ export interface Comparison {
 export interface Result {
   claims?: {claim_id: string; text: string; evidence: Evidence; type: string; supporting_evidence?: Evidence[]}[];
   gaps?: string[]; intent?: string; formats?: string[]; approval?: {purpose: string};
-  metadata_leads?: Source[]; comparisons?: Record<string, Comparison>;
+  metadata_leads?: Source[]; imported_papers?: {doi: string; document_id: string; reused: boolean}[]; comparisons?: Record<string, Comparison>;
 }
 export interface Job { id: string; kind: string; status: string; error: string | null; result: Result | null }
 export interface Activity { stage: string; created: number }

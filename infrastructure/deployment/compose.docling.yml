@@ -1,0 +1,13 @@
+services:
+  docling:
+    image: ${RP_DOCLING_IMAGE:-quay.io/docling-project/docling-serve-cpu:v1.18.0}
+    restart: unless-stopped
+    environment:
+      DOCLING_SERVE_ENABLE_UI: "false"
+      DOCLING_SERVE_MAX_SYNC_WAIT: "180"
+    security_opt: [no-new-privileges:true]
+  worker:
+    environment:
+      RP_DOCLING_URL: http://docling:5001
+      NO_PROXY: docling,scanner,localhost,127.0.0.1
+      no_proxy: docling,scanner,localhost,127.0.0.1

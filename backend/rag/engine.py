@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Protocol
 
 from connectors.scholarly import DOI
+from ingestion.observations import mentioned_metrics
 
 TOKEN = re.compile(r"[^\W_]+(?:[-/][^\W_]+)*", re.UNICODE)
 STOP = frozenset("a an and are at by did do for from how in is it of on or paper study the to was were what when where which who with".split())
@@ -56,7 +57,7 @@ def plan(query):
         intent, routes = "recommendation", ("bm25", "sql", "hierarchy", "captions")
     elif re.search(r"\b(?:literature review|systematic review|survey|state of the art|research gaps|overview)\b", lower):
         intent, routes = "review", ("hierarchy", "bm25", "metadata")
-    elif re.search(r"\b(?:how much|how many|numerical|measured|yield|efficiency|concentration|temperature|pressure|hhv|cge|cce)\b", lower):
+    elif mentioned_metrics(query) or re.search(r"\b(?:how much|how many|numerical|measured|yield|efficiency|concentration|temperature|pressure)\b", lower):
         intent, routes = "numerical", ("sql", "captions", "bm25", "phrase")
     elif re.search(r"\b(?:define|definition|meaning of|what (?:is|are))\b", lower):
         intent, routes = "definition", ("definition", "phrase", "bm25")

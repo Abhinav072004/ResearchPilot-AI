@@ -7,7 +7,9 @@ import pymupdf
 from defusedxml import ElementTree
 
 from app.config import settings
+from ingestion.docling_client import extract_tables
 from ingestion.ocr import recognize
+from ingestion.tables import cell, jats_table, table_payload, table_text
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,7 @@ class Block:
     page: int | None = None
     kind: str = "paragraph"
     anchor: dict = field(default_factory=dict)
+    structure: dict | None = None
 
 
 HEADINGS = re.compile(r"^(?:\d+(?:\.\d+)*\.?\s+)?(?:abstract|introduction|background|materials and methods|"
@@ -37,11 +40,15 @@ def kind_for(text):
 def pdf_blocks(content):
     heading = "Document"
     blocks = []
-    ocr_deadline = monotonic() + 85
     scans = 0
     with pymupdf.open(stream=content, filetype="pdf") as doc:
         if doc.is_encrypted or not 0 < len(doc) <= 250:
             raise ValueError("Encrypted, empty or oversized PDF")
+        budget = monotonic() + 85
+        tables_by_page = {}
+        for page_number, bounds, table in extract_tables(content):
+            if 1 <= page_number <= len(doc):
+                tables_by_page.setdefault(page_number, []).append((bounds, table, "docling"))
         for page in doc:
             native = [(text.strip(), [x0, y0, x1, y1], None)
                       for x0, y0, x1, y1, text, _, kind in page.get_text("blocks", sort=True)
@@ -49,7 +56,7 @@ def pdf_blocks(content):
             page_blocks = native
             if not native and page.get_image_info():
                 scans += 1
-                remaining = ocr_deadline - monotonic()
+                remaining = budget - monotonic()
                 if scans > 35 or remaining <= 0:
                     raise ValueError("Scanned PDF exceeds OCR processing limits. Split it into smaller files.")
                 page_blocks = recognize(page, timeout=min(18, remaining))
@@ -62,6 +69,22 @@ def pdf_blocks(content):
                     if confidence is not None:
                         anchor["ocr_confidence"] = confidence
                     blocks.append(Block(heading, text, page.number + 1, kind_for(text), anchor))
+            detected = tables_by_page.get(page.number + 1, [])
+            if not detected and native and len(native) >= 3:
+                # Native grid extraction remains available when Docling is disabled.
+                for table in page.find_tables().tables[:30]:
+                    cells = []
+                    for row, values in enumerate(table.extract()[:300]):
+                        for column, text in enumerate(values[:40]):
+                            cells.append(cell(row, column, text, header=row == 0 and not table.header.external))
+                    if not cells:
+                        continue
+                    if table.header.external:
+                        cells = [cell(-1, column, name, header=True) for column, name in enumerate(table.header.names)] + cells
+                    detected.append((list(table.bbox), table_payload(cells), "pymupdf-table"))
+            for bounds, table, extractor in detected:
+                blocks.append(Block(heading, table_text(table), page.number + 1, "table",
+                                    {"bbox": bounds, "extractor": extractor}, table))
     return blocks
 
 
@@ -73,7 +96,9 @@ def xml_blocks(content):
     def copied_text(element):
         return re.sub(r"\s+", " ", " ".join(element.itertext())).strip()
 
-    def walk(element, heading="Document", path="1"):
+    def walk(element, heading="Document", path="1", depth=0):
+        if depth > 100:
+            raise ValueError("Document XML exceeds the supported nesting level")
         tags = {"p": "paragraph", "table-wrap": "table", "table": "table", "fig": "figure_caption",
                 "figure": "figure_caption", "disp-formula": "equation", "formula": "equation", "ref": "reference"}
         if element.tag in ("sec", "div", "abstract", "ref-list"):
@@ -93,12 +118,21 @@ def xml_blocks(content):
                     node = element.find("figDesc")
                 if node is None:
                     return
-            text = copied_text(node)
+            structure = None
+            if kind == "table":
+                structure = jats_table(element, copied_text)
+            elif kind in {"figure_caption", "equation", "reference"}:
+                label = element.findtext("label")
+                structure = {"label": label.strip() if label else "", "text": copied_text(node)}
+                doi = element.find(".//pub-id[@pub-id-type='doi']")
+                if doi is not None and doi.text:
+                    structure["doi"] = doi.text.strip()
+            text = table_text(structure) if kind == "table" and structure else copied_text(node)
             if text:
-                yield Block(heading, text, None, kind, {"xml_path": path, "extractor": "xml"})
+                yield Block(heading, text, None, kind, {"xml_path": path, "extractor": "xml"}, structure)
             return
         for index, child in enumerate(element, 1):
-            yield from walk(child, heading, f"{path}/{index}")
+            yield from walk(child, heading, f"{path}/{index}", depth + 1)
 
     return list(walk(root))
 
@@ -128,11 +162,11 @@ def parse(content, content_type):
         while len(block.text) - offset > 6000:
             end = block.text.rfind(" ", offset + 3000, offset + 6000)
             end = offset + 6000 if end < 0 else end
-            result.append(replace(block, text=block.text[offset:end],
+            result.append(replace(block, text=block.text[offset:end], structure=block.structure if offset == 0 else None,
                                   anchor={**block.anchor, "character_start": offset, "character_end": end}))
             offset = end + int(block.text[end] == " ")
         if offset:
-            result.append(replace(block, text=block.text[offset:],
+            result.append(replace(block, text=block.text[offset:], structure=None,
                                   anchor={**block.anchor, "character_start": offset,
                                           "character_end": len(block.text)}))
         else:

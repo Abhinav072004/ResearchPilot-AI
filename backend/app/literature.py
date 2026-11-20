@@ -1,4 +1,5 @@
 from time import time
+from uuid import uuid4
 from typing import Literal
 
 import httpx
@@ -7,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.auth import CurrentUser, Db
-from app.models import Paper, Source
+from app.models import Author, Paper, PaperAuthor, Source
 from app.schemas import LiteratureResponse, SourceResponse
 from connectors.scholarly import discover, normalize_doi, resolve_doi
 
@@ -31,6 +32,15 @@ def persist(db, records):
                     db.flush()
                 elif record["retracted"] is True:
                     paper.retracted = True
+                if record.get("authors") and db.scalar(
+                    select(PaperAuthor.author_id).where(PaperAuthor.paper_id == paper.id).limit(1)
+                ) is None:
+                    authors = [(index, Author(id=str(uuid4()), display_name=name)) for index, name in
+                               enumerate(record["authors"][:500], 1) if isinstance(name, str) and name.strip()]
+                    db.add_all(author for _, author in authors)
+                    db.flush()
+                    db.add_all(PaperAuthor(paper_id=paper.id, position=index, author_id=author.id)
+                               for index, author in authors)
                 if source is None:
                     db.add(Source(paper_id=paper.id, provider=record["provider"],
                                   external_id=record["external_id"], record=record))

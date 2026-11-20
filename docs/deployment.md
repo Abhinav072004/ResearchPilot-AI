@@ -79,3 +79,14 @@ For a complete managed restore, enable PostgreSQL point-in-time recovery and S3 
 Poll /health/live and /health/ready and scrape /metrics directly from the private API network. Ship API request duration and status logs, worker failures and audit events to the deployment's log aggregation. Alert on elevated HTTP error or latency rates and queued job age. Check job and audit records when investigating individual failures. Worker readiness probes the Celery process through Redis.
 
 The API records provider-reported token counts and estimated cost when prices are configured. Default research uses no paid model calls. External reranking and synthesis require project-user approval. Reranking sends at most twelve clipped passages per call. Set `RP_LLM_MAX_CALLS=3` to enable ranking, synthesis and claim checking in one run. The application reserves each model call before sending data and records provider-reported usage when available. Workers use prefetch one and a hard job time limit. Scale concurrency against observed queue age and parser memory pressure. PostgreSQL narrows candidates with a GIN index in larger corpora. Monitor its query plan and recompute corpus benchmarks when switching indexing strategies.
+
+
+## Optional private Docling service
+
+Docling complements PyMuPDF table extraction. To run the CPU service in the same private Compose network, use the optional overlay.
+
+```sh
+docker compose -f docker-compose.yml -f infrastructure/deployment/compose.docling.yml up -d
+```
+
+The CPU image requires substantial disk and memory. Select a compatible image with `RP_DOCLING_IMAGE`. To use an existing private service, set `RP_DOCLING_URL` to its base URL on the worker. The configured service receives authorized source PDFs. It requires no ingress port on the public gateway. On timeout or service failure, the worker falls back to native PDF extraction.

@@ -67,6 +67,31 @@ jobs:
       - working-directory: backend
         run: python -m evaluation.live_integrations
 
+  research-benchmark:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r backend/requirements.txt -r backend/requirements-eval.txt
+      - name: Download AI2 SciFact development data
+        run: curl --proto '=https' --fail --location --retry 3 --max-time 120 https://scifact.s3-us-west-2.amazonaws.com/release/latest/data.tar.gz --output "$RUNNER_TEMP/scifact.tar.gz"
+      - name: Measure lexical, structural, graph, dense and hybrid retrieval
+        shell: bash
+        working-directory: backend
+        env:
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+        run: python -m evaluation.scifact "$RUNNER_TEMP/scifact.tar.gz" --dense | tee "$RUNNER_TEMP/scifact-metrics.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scifact-metrics
+          path: ${{ runner.temp }}/scifact-metrics.json
+
   images:
     if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.production))
     needs: verify

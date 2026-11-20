@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added licensed discovery-to-ingestion within research runs and streaming of verified excerpts.
+- Added discipline-specific measurement profiles, table-cell provenance, normalized paper metadata and workspace role management.
+- Added a SciFact benchmark job and optional private Docling table extraction.
+
 - Added Tesseract OCR for image-only PDF pages with bounding boxes and word-confidence provenance.
 - Added DOI-based Europe PMC imports for verified open-licence JATS full text.
 - Added live scholarly checks, a ClamAV and S3-compatible service rehearsal, and a GitHub Actions production rollout with digest-pinned images and rollback.

@@ -1,0 +1,50 @@
+name: Verify Docling integration
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - backend/ingestion/docling_client.py
+      - backend/evaluation/docling_smoke.py
+      - infrastructure/deployment/compose.docling.yml
+      - .github/workflows/docling.yml
+  pull_request:
+    paths:
+      - backend/ingestion/docling_client.py
+      - backend/evaluation/docling_smoke.py
+      - infrastructure/deployment/compose.docling.yml
+      - .github/workflows/docling.yml
+
+permissions:
+  contents: read
+
+jobs:
+  docling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements.txt
+      - name: Start the CPU converter
+        run: |
+          docker run -d --name researchpilot-docling -p 127.0.0.1:15001:5001 \
+            -e DOCLING_SERVE_MAX_SYNC_WAIT=180 quay.io/docling-project/docling-serve-cpu:v1.18.0
+          for ((attempt=0; attempt<60; attempt++)); do
+            if curl -fsS --max-time 5 http://localhost:15001/health; then exit 0; fi
+            sleep 3
+          done
+          exit 1
+      - name: Check table cells and page provenance
+        working-directory: backend
+        env:
+          RP_DOCLING_URL: http://localhost:15001
+        run: python -m evaluation.docling_smoke
+      - name: Collect converter output
+        if: failure()
+        run: docker logs researchpilot-docling
+      - name: Clean up the converter
+        if: always()
+        run: docker rm -f researchpilot-docling || true

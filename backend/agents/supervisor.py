@@ -1,8 +1,9 @@
 import re
 from contextlib import contextmanager
 from pathlib import Path
-from time import time
+from time import perf_counter, time
 from typing import TypedDict
+from uuid import NAMESPACE_URL, uuid5
 
 import httpx
 
@@ -15,9 +16,11 @@ from sqlalchemy import select
 from agents.synthesis import propose, verify
 from app.analysis import compare, facets
 from app.config import settings
-from app.models import Claim, Document, EvidenceLink, JobEvent, Paper, Passage
+from app.models import Claim, Document, EvidenceLink, JobEvent, Paper, Passage, RetrievalRun
 from connectors.scholarly import discover, resolve_doi
-from ingestion.observations import ALIASES, METRICS
+from ingestion.domains import Domain
+from ingestion.observations import mentioned_metrics
+from ingestion.service import import_licensed, licensed_document
 from rag.engine import plan, tokens
 from rag.repository import evidence, evidence_query, retrieve
 from rag.reranker import ModelBudget
@@ -34,6 +37,7 @@ class ResearchState(TypedDict, total=False):
     provider_errors: dict
     verified_metadata: list[dict]
     documents: list[str]
+    imported_papers: list[dict]
     passage_ids: list[str]
     proposed: list[dict]
     checked: list[dict]
@@ -56,6 +60,7 @@ def checkpointer():
 
 
 def run_research(db, job):
+    domain = Domain(job.payload.get("domain", Domain.AUTO))
     model = ModelBudget(db, job.id) if job.payload.get("external_model") else None
     def event(stage, detail=None):
         db.add(JobEvent(job_id=job.id, stage=stage, detail=detail or {}))
@@ -78,7 +83,7 @@ def run_research(db, job):
         return {"queries": list(plan(state["question"]).queries)}
 
     def discovery(state):
-        if not job.payload.get("discover"):
+        if not job.payload.get("discover") or state.get("doi"):
             return {"discovery": []}
         records, errors = discover(state["queries"][0], ("crossref", "openalex"), limit=5)
         return {"discovery": records, "provider_errors": errors}
@@ -93,8 +98,7 @@ def run_research(db, job):
                 verified.append(resolve_doi(doi, int(time() // 300)))
             except (httpx.HTTPError, ValueError, KeyError, IndexError):
                 continue
-        gaps = ["Discovered records are metadata leads until an authorized full text is ingested."] if verified else []
-        return {"verified_metadata": verified, "gaps": gaps}
+        return {"verified_metadata": verified}
 
     def approval(state):
         task = "ranking, synthesis and claim verification" if job.payload.get("synthesize") else "relevance ranking"
@@ -105,16 +109,46 @@ def run_research(db, job):
         return {"stage": "approval", "deadline": time() + 100}
 
     def document_intelligence(state):
+        imported = []
+        gaps = list(state.get("gaps", []))
+        if job.payload.get("discover"):
+            for metadata in state.get("verified_metadata", []):
+                doi = metadata["doi"]
+                if metadata.get("retracted") or metadata.get("publication_type") == "retraction_notice":
+                    gaps.append(f"Excluded retracted publication or notice {doi}.")
+                    continue
+                existing = licensed_document(db, job.project_id, doi)
+                if existing:
+                    imported.append({"doi": doi, "document_id": existing.id, "reused": True})
+                    continue
+                # Reserve time for retrieval and optional external verification.
+                if time() + (60 if model else 30) >= state["deadline"]:
+                    gaps.append(f"Full-text check for {doi} exceeded the research time budget.")
+                    continue
+                try:
+                    result = import_licensed(db, job.project_id, doi)
+                except (ValueError, httpx.HTTPError) as exc:
+                    db.rollback()
+                    gaps.append(f"Full text for {doi} was unavailable: {exc}")
+                    continue
+                imported.append({"doi": doi, **result})
+                if not result["reused"] and state["intent"] not in {"comparison", "review", "recommendation"}:
+                    break
         documents = db.scalars(select(Document.id).outerjoin(Paper, Document.paper_id == Paper.id)
                                .where(Document.project_id == job.project_id,
                                       Paper.id.is_(None) | Paper.retracted.is_(False))).all()
-        return {"documents": documents}
+        return {"documents": documents, "imported_papers": imported, "gaps": gaps}
 
     def vectorless_retrieval(state):
         if not state["documents"]:
             return {"passage_ids": []}
         rank = model.rerank if model else None
-        rows = retrieve(db, job.project_id, state["question"], 10, reranker=rank)
+        started = perf_counter()
+        route = plan(state["question"])
+        rows = retrieve(db, job.project_id, state["question"], 10, reranker=rank, domain=domain)
+        db.add(RetrievalRun(project_id=job.project_id, job_id=job.id, intent=route.intent, routes=list(route.routes),
+                            returned=len(rows), elapsed_ms=(perf_counter() - started) * 1000))
+        db.commit()
         return {"passage_ids": [row.id for row in rows]}
 
     def records(state):
@@ -122,6 +156,17 @@ def run_research(db, job):
             Passage.id.in_(state.get("passage_ids", [])), Paper.id.is_(None) | Paper.retracted.is_(False)
         ))
         return {entry.id: entry for entry in map(evidence, rows)}
+
+    def direct_claims(state, candidates):
+        entries = records(state)
+        result = []
+        for claim in candidates:
+            row = entries.get(claim["passage_id"])
+            if row is not None and claim["text"] in row.text:
+                result.append({**claim, "evidence": row.to_dict(), "claim_id": str(uuid5(
+                    NAMESPACE_URL, f"{job.id}:{row.id}:{claim['text']}"
+                ))})
+        return result
 
     def analyst(state):
         entries = records(state)
@@ -139,6 +184,12 @@ def run_research(db, job):
                 candidates.append({"passage_id": identifier, "text": best, "facets": facets(best),
                                    "type": "direct_excerpt"})
         result = {"proposed": candidates}
+        if candidates:
+            job.result = {"status": "running", "intent": state["intent"],
+                          "claims": direct_claims(state, candidates),
+                          "imported_papers": state.get("imported_papers", []),
+                          "gaps": state.get("gaps", [])}
+            db.commit()
         if model and job.payload.get("synthesize") and entries:
             ordered = [entries[key] for key in state["passage_ids"] if key in entries]
             result["synthesis"] = [item.model_dump() for item in propose(model, state["question"], ordered)]
@@ -147,18 +198,13 @@ def run_research(db, job):
     def domain_expert(state):
         if state["intent"] != "comparison":
             return {}
-        metrics = [ALIASES.get(metric.lower(), metric.lower()) for metric in METRICS
-                   if metric.lower() in state["question"].lower()]
-        return {"comparisons": {metric: compare(db, job.project_id, state["documents"], metric)
-                                for metric in dict.fromkeys(metrics)}}
+        metrics = sorted(mentioned_metrics(state["question"], domain))
+        return {"comparisons": {metric: compare(db, job.project_id, state["documents"], metric, domain)
+                                for metric in metrics}}
 
     def fact_checker(state):
         entries = records(state)
-        checked = []
-        for claim in state["proposed"]:
-            row = entries.get(claim["passage_id"])
-            if row is not None and claim["text"] in row.text:
-                checked.append({**claim, "evidence": row.to_dict()})
+        checked = direct_claims(state, state["proposed"])
         if model and state.get("synthesis"):
             synthesis = []
             for claim in verify(model, state["synthesis"], entries):
@@ -178,9 +224,10 @@ def run_research(db, job):
             gaps.append("The model did not return synthesis that passed citation and claim checks.")
         if state["intent"] == "recommendation":
             gaps.append("Review transferability, operating conditions and primary sources before acting.")
-        return {"output": {"status": "succeeded", "intent": state["intent"], "claims": state["checked"],
+        return {"output": {"status": "succeeded", "intent": state["intent"], "domain": domain.value, "claims": state["checked"],
                            "gaps": gaps, "metadata_leads": state.get("verified_metadata", []),
                            "provider_errors": state.get("provider_errors", {}),
+                           "imported_papers": state.get("imported_papers", []),
                            "comparisons": state.get("comparisons", {})}}
 
     steps = {
@@ -223,7 +270,9 @@ def run_research(db, job):
             return "awaiting_approval", {"approval": state["__interrupt__"][0].value}
     output = state["output"]
     for item in output["claims"]:
-        claim = Claim(job_id=job.id, text=item["text"])
+        claim = Claim(id=item["claim_id"], job_id=job.id, text=item["text"]) if "claim_id" in item else Claim(
+            job_id=job.id, text=item["text"]
+        )
         db.add(claim)
         db.flush()
         identifiers = {source["id"] for source in item.get("supporting_evidence", [item["evidence"]])}

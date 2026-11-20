@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Cookie, HTTPException, Response
 from pydantic import BaseModel, Field, StringConstraints
@@ -174,3 +174,80 @@ def add_message(conversation_id: str, body: MessageBody, db: Db, user: CurrentUs
     db.add(message)
     db.commit()
     return {"id": message.id, "body": message.body}
+
+
+class TeamRole(BaseModel):
+    role: Literal["editor", "viewer"]
+
+
+class TeamMember(TeamRole):
+    email: Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True, max_length=254,
+                                            pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")]
+
+
+def owner_team(db, user, project_id):
+    project = require_project(db, user, project_id)
+    owner = db.get(Membership, (project.organization_id, user.id))
+    if owner is None or owner.role != "owner":
+        raise HTTPException(403, "Only workspace owners can manage team access")
+    return project
+
+
+def team_change(db, user, project, event):
+    db.add(AuditEvent(organization_id=project.organization_id, actor_id=user.id,
+                      project_ref=project.id, event=event))
+    db.commit()
+
+
+@router.get("/projects/{project_id}/team")
+def team(project_id: str, db: Db, user: CurrentUser):
+    project = require_project(db, user, project_id)
+    membership = db.get(Membership, (project.organization_id, user.id))
+    if membership is None:
+        raise HTTPException(404, "Workspace membership not found")
+    if membership.role != "owner":
+        return {"role": membership.role, "members": []}
+    rows = db.execute(select(User, Membership).join(Membership, Membership.user_id == User.id)
+                      .where(Membership.organization_id == project.organization_id).order_by(User.email))
+    return {"role": "owner", "members": [{"id": member.id, "email": member.email, "role": access.role}
+                                         for member, access in rows]}
+
+
+@router.post("/projects/{project_id}/team", status_code=201)
+def add_team_member(project_id: str, body: TeamMember, db: Db, user: CurrentUser):
+    project = owner_team(db, user, project_id)
+    member = db.scalar(select(User).where(User.email == body.email))
+    if member is None:
+        raise HTTPException(404, "A registered account with this email was not found")
+    try:
+        db.add(Membership(organization_id=project.organization_id, user_id=member.id, role=body.role))
+        team_change(db, user, project, "workspace_member_added")
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "This account already has workspace access") from exc
+    return {"id": member.id, "email": member.email, "role": body.role}
+
+
+def editable_member(db, project, member_id):
+    membership = db.get(Membership, (project.organization_id, member_id), with_for_update=True)
+    if membership is None:
+        raise HTTPException(404, "Workspace member not found")
+    if membership.role == "owner":
+        raise HTTPException(409, "Workspace ownership cannot be changed here")
+    return membership
+
+
+@router.patch("/projects/{project_id}/team/{member_id}")
+def update_team_member(project_id: str, member_id: str, body: TeamRole, db: Db, user: CurrentUser):
+    project = owner_team(db, user, project_id)
+    membership = editable_member(db, project, member_id)
+    membership.role = body.role
+    team_change(db, user, project, "workspace_role_changed")
+    return {"id": member_id, "role": body.role}
+
+
+@router.delete("/projects/{project_id}/team/{member_id}", status_code=204)
+def remove_team_member(project_id: str, member_id: str, db: Db, user: CurrentUser):
+    project = owner_team(db, user, project_id)
+    db.delete(editable_member(db, project, member_id))
+    team_change(db, user, project, "workspace_member_removed")

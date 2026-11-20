@@ -12,7 +12,7 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 
 from app.config import settings
-from app.main import app
+from app.main import app, local_rates
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -22,6 +22,11 @@ def migrate():
         from agents.supervisor import checkpointer
         with checkpointer() as saver:
             saver.setup()
+
+
+@pytest.fixture(autouse=True)
+def isolate_request_quota():
+    local_rates.clear()
 
 
 @pytest.fixture

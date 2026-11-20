@@ -1,7 +1,8 @@
 from sqlalchemy import String, func, literal_column, select
 
 from app.models import Document, Observation, Paper, Passage, Section
-from ingestion.observations import ALIASES, METRICS
+from ingestion.domains import Domain
+from ingestion.observations import canonical_metric, mentioned_metrics
 from rag.engine import Evidence, Vectorless, plan, tokens
 
 
@@ -18,9 +19,9 @@ def evidence(row):
     return Evidence(id=passage.id, document_id=document.id, title=document.title, text=passage.text,
                     section=section.heading, section_id=section.id, kind=passage.kind, page=passage.page,
                     doi=paper.doi if paper else None, access=document.access,
-                    metadata={**paper.metadata_json, "document_link": "user_asserted", **(document.provenance or {}),
+                    metadata={**(document.bibliography or {}), **paper.metadata_json, "document_link": "user_asserted", **(document.provenance or {}),
                               "retracted": True if paper.retracted else paper.metadata_json.get("retracted")}
-                    if paper else {}, anchor=passage.anchor)
+                    if paper else (document.bibliography or {}), anchor=passage.anchor)
 
 
 def observation_query(project_id):
@@ -31,7 +32,7 @@ def observation_query(project_id):
 
 
 def retrieve(db, project_id, query, limit=10, *, document_ids=(), year=None, metric=None,
-             unit=None, minimum=None, maximum=None, reranker=None):
+             unit=None, minimum=None, maximum=None, reranker=None, domain=Domain.AUTO):
     selection = evidence_query(project_id).where(Paper.id.is_(None) | Paper.retracted.is_(False))
     if document_ids:
         selection = selection.where(Document.id.in_(document_ids))
@@ -39,14 +40,14 @@ def retrieve(db, project_id, query, limit=10, *, document_ids=(), year=None, met
         selection = selection.where(Paper.metadata_json["year"].as_string().cast(String) == str(year))
 
     def numerical(text):
-        metrics = {ALIASES.get(key.lower(), key.lower()) for key in METRICS if key.lower() in text.lower()}
-        if metric:
-            metrics = {ALIASES.get(metric.lower(), metric.lower())}
+        metrics = {canonical_metric(metric)} if metric else mentioned_metrics(text, domain)
         if not metrics and unit is None and minimum is None and maximum is None:
             return []
         statement = observation_query(project_id).with_only_columns(Observation.passage_id)
         if metrics:
             statement = statement.where(Observation.metric.in_(metrics))
+        if domain != Domain.AUTO:
+            statement = statement.where(Observation.domain == domain)
         if unit is not None:
             statement = statement.where(Observation.unit == unit)
         if minimum is not None:
