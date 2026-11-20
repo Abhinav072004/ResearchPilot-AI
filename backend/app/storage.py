@@ -54,5 +54,8 @@ def malware_check(content):
         conn.sendall(b"\0" * 4)
         with conn.makefile("rb") as stream:
             result = stream.read(4096)
-    if result.strip(b"\0\r\n") != b"stream: OK":
-        raise ValueError("Upload did not pass malware scanning")
+    status = result.strip(b"\0\r\n")
+    if status.endswith(b" FOUND"):
+        raise ValueError("Upload rejected by malware scanning (FOUND)")
+    if status != b"stream: OK":
+        raise ValueError("Upload could not be verified by malware scanning")

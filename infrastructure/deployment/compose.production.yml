@@ -1,0 +1,79 @@
+x-app: &app
+  image: ${RP_API_IMAGE:?Set the release API image digest}
+  env_file: ${RP_HOST_ENV_FILE:?Set the host environment file path}
+  environment:
+    RP_ENVIRONMENT: production
+    RP_SECURE_COOKIE: "true"
+    RP_CLAMD_HOST: scanner
+    RP_LOCAL_OBJECTS: /app/data/objects
+  volumes:
+    - runtime:/app/data
+  security_opt: [no-new-privileges:true]
+
+services:
+  migrate:
+    <<: *app
+    command: ["python", "-m", "app.release"]
+    healthcheck:
+      disable: true
+
+  api:
+    <<: *app
+    restart: unless-stopped
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      scanner: {condition: service_healthy}
+
+  worker:
+    <<: *app
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker:celery", "worker", "--loglevel=INFO", "--concurrency=2"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker:celery inspect ping -d celery@$$HOSTNAME --timeout=5"]
+      interval: 15s
+      timeout: 8s
+      retries: 8
+    depends_on:
+      api: {condition: service_healthy}
+
+  scheduler:
+    <<: *app
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker:celery", "beat", "--loglevel=INFO", "--schedule=/app/data/celerybeat"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, glob, redis; assert glob.glob('/app/data/celerybeat*'); redis.Redis.from_url(os.environ['RP_REDIS_URL'], socket_timeout=2).ping()"]
+      interval: 10s
+      timeout: 4s
+      retries: 8
+    depends_on:
+      api: {condition: service_healthy}
+
+  scanner:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes: [clamav:/var/lib/clamav]
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 16
+      start_period: 90s
+
+  gateway:
+    image: ${RP_FRONTEND_IMAGE:?Set the release gateway image digest}
+    restart: unless-stopped
+    environment:
+      RP_SITE_ADDRESS: ${RP_SITE_ADDRESS:?Set the site HTTPS hostname}
+      NO_PROXY: api,localhost,127.0.0.1
+      no_proxy: api,localhost,127.0.0.1
+    depends_on:
+      api: {condition: service_healthy}
+      worker: {condition: service_healthy}
+    ports: ["80:80", "443:443"]
+    volumes: [caddy:/data, caddy-config:/config]
+
+volumes:
+  runtime:
+  clamav:
+  caddy:
+  caddy-config:

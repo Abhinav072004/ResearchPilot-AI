@@ -18,8 +18,9 @@ def evidence(row):
     return Evidence(id=passage.id, document_id=document.id, title=document.title, text=passage.text,
                     section=section.heading, section_id=section.id, kind=passage.kind, page=passage.page,
                     doi=paper.doi if paper else None, access=document.access,
-                    metadata={**paper.metadata_json, "document_link": "user_asserted", "retracted": True if paper.retracted else
-                              paper.metadata_json.get("retracted")} if paper else {}, anchor=passage.anchor)
+                    metadata={**paper.metadata_json, "document_link": "user_asserted", **(document.provenance or {}),
+                              "retracted": True if paper.retracted else paper.metadata_json.get("retracted")}
+                    if paper else {}, anchor=passage.anchor)
 
 
 def observation_query(project_id):

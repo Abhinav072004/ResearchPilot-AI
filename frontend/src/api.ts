@@ -3,8 +3,8 @@ export interface Named { id: string; title: string }
 export interface Evidence {
   id: string; document_id: string; title: string; text: string; section: string;
   page: number | null; kind: string; doi: string | null; access: string;
-  metadata: {document_link?: string; retracted?: boolean; authors?: string[]; year?: number; journal?: string};
-  anchor: {xml_path?: string};
+  metadata: {document_link?: string; source_url?: string; licence?: string; retracted?: boolean; authors?: string[]; year?: number; journal?: string};
+  anchor: {xml_path?: string; extractor?: string; ocr_confidence?: number};
 }
 export interface Source {
   external_id: string; title: string; doi: string | null; authors: string[];

@@ -18,7 +18,8 @@ def source_label(source):
                                         source["anchor"].get("xml_path", ""), source["access"]]))
     authors = ", ".join(filter(None, meta.get("authors", [])))
     return " · ".join(filter(None, [source["title"], authors, str(meta.get("year") or ""), meta.get("journal"),
-                                   location, url]))
+                                   location, url, meta.get("source_url") if source["access"] == "licensed_full_text" else None,
+                                   meta.get("licence") if source["access"] == "licensed_full_text" else None]))
 
 
 def render(title, result, output_type):

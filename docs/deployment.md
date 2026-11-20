@@ -29,19 +29,44 @@ playwright install chromium
 python -m evaluation.browser_smoke http://localhost:8080
 ```
 
-## HTTPS release
+## GitHub Actions production deployment
 
-Use a single Caddy ingress and deploy APIs, workers and the job recovery scheduler separately. Set `RP_SITE_ADDRESS` to an HTTPS hostname with matching DNS, publish ports 80 and 443, set `RP_ENVIRONMENT=production`, `RP_SECURE_COOKIE=true`, and set `RP_ORIGIN` to the same scheme and host. Caddy enables automatic HTTPS for a real domain. Expose only the gateway. Uvicorn trusts forwarding headers from the private network. Restrict entry to that network so only the gateway can reach the API listener.
+The **Verify and package** workflow exercises the frontend build, backend tests, migrations, a Compose HTTP smoke, dependency audits, S3-compatible operations and ClamAV detection. On trusted repository pushes it also runs a public Crossref and licensed Europe PMC check. A version tag or a manually requested production release publishes the API and gateway images to GitHub Container Registry. Deployment requires passing checks and uses image digests.
 
-Use a managed PostgreSQL endpoint with `sslmode=verify-full`, an authenticated private Redis endpoint, and a private encrypted S3-compatible bucket. Set AWS credentials or attach an identity to API and worker deployments. Grant access only to this deployment's bucket. The worker scans input through a private ClamAV endpoint before parsing. Bring up the `scanner` Compose profile if running it locally and set `RP_CLAMD_HOST=scanner` after signature updates complete. Confirm S3 puts and reads and scanner use with the staging smoke before admitting traffic. Optional GROBID runs on a private network and receives the authorized PDF only.
+Prepare a Linux Docker host with Compose v2, an SSH user authorized to run Docker, enough memory for ClamAV, and a DNS name resolving to the host. Publish ports 80 and 443 for Caddy. Use a private PostgreSQL endpoint with `sslmode=verify-full`, authenticated private Redis, and a private encrypted S3 bucket. Grant the runtime identity the minimum required object permissions for project keys and the temporary `release-health/` prefix. Configure GHCR pull access on the host for private images. Keep the API and workers on the private Compose network.
 
-Allow outgoing HTTPS to the enabled sources. Hostnames are `api.crossref.org`, `api.openalex.org`, `api.semanticscholar.org`, `export.arxiv.org`, `eutils.ncbi.nlm.nih.gov`, `www.ebi.ac.uk`, and `api.core.ac.uk`. OpenAlex and CORE use separately configured keys. Configure an approved model API and credentials only if project users may send their evidence there. Store credentials in the deployment secret manager.
+Create the deployment root on the server and copy [the production environment template](../infrastructure/deployment/production.env.example) there as `.env`. Restrict access to the file. Set the real HTTPS hostname in both `RP_SITE_ADDRESS` and `RP_ORIGIN`. Supply database, Redis and storage settings through the host configuration. Caddy manages HTTPS certificates for the public hostname. ClamAV downloads signature updates and scans documents before parsing.
 
-## Release and rollback
+Configure a `production` environment in the repository's GitHub settings with these values.
 
-CI runs tests, retrieval evaluation, dependency audits, frontend build and the local Compose smoke. Version tags publish both images to the repository's GitHub Container Registry. Pin release image digests in the deployment environment and retain the previous digests. Take a database backup and capture the object-storage version point before each release. Run a single migration job, bring up the API, then start the worker, scheduler and gateway. Run the smoke against staging first.
+| GitHub environment setting | Purpose |
+| --- | --- |
+| Variable `DEPLOY_HOST` | Reachable Docker server hostname or IPv4 address |
+| Variable `DEPLOY_PORT` | SSH port if different from 22 |
+| Variable `DEPLOY_USER` | Deployment SSH user |
+| Variable `DEPLOY_ROOT` | Absolute directory with the host-only `.env` |
+| Variable `DEPLOY_URL` | Public HTTPS origin |
+| Secret `DEPLOY_SSH_KEY` | Private key for the deployment account |
+| Secret `DEPLOY_KNOWN_HOSTS` | Trusted SSH host-key entry for the exact server and port |
 
-For rollback, pause new traffic, allow active jobs to drain and restore the previous digests if the schema changes are backward-compatible. If a migration made an incompatible change, restore the previous database and object-store state to a fresh location, validate with smoke, then switch traffic. Avoid running an Alembic downgrade against live data without testing it on an isolated copy.
+From **Actions → Verify and package → Run workflow**, select `main` and enable **production**. To deploy automatically on version tags, set the repository variable `DEPLOY_ON_TAG=true` and protect release tags. The job pulls the pinned images, verifies the configured S3 bucket and ClamAV before installing the application, runs migrations, starts workers and gateways, and checks HTTPS readiness. Its release pointer advances after that check passes.
+
+Allow outgoing HTTPS to the scholarly APIs you use. The built-in source hosts are `api.crossref.org`, `api.openalex.org`, `api.semanticscholar.org`, `export.arxiv.org`, `eutils.ncbi.nlm.nih.gov`, `www.ebi.ac.uk`, and `api.core.ac.uk`. OpenAlex and CORE use separately configured keys. Configure a model URL and credentials only for an approved provider. GROBID is optional and should use a private endpoint.
+
+For integration checks on a disposable stack, run `infrastructure/deployment/verify-integrations.sh` after building the local Compose images. It checks the S3 API against Moto and scans a clean file and an inert EICAR fixture with ClamAV. The release runs the same storage and scanner probe against the configured production services.
+
+For live validation from a permitted network, run from `backend`.
+
+```sh
+python -m evaluation.live_integrations
+python -m evaluation.http_smoke https://staging.example.org --live-model
+```
+
+The second command uses the configured model with a synthetic question and requires `RP_LLM_MAX_CALLS=3` in the staging deployment. It checks approval, quote provenance and a known-answer judgement. Wider model quality requires a representative evaluation corpus.
+
+## Release rollback
+
+Take a database backup and capture the object-storage version point before releases. The deployment host retains prior release manifests and image digests under `releases/`. If rollout fails, the release script reapplies the previous image digests when available. Keep migrations backward-compatible for image rollback. For an incompatible schema change, restore the database and object store into a fresh location, run smoke checks there, and then switch traffic.
 
 ## Backup and retention
 

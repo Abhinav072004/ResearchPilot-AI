@@ -61,6 +61,10 @@ class Comparison(BaseModel):
     metric: str = Field(min_length=2, max_length=100)
 
 
+class ImportRequest(BaseModel):
+    doi: str = Field(max_length=330)
+
+
 class ReportRequest(BaseModel):
     research_id: str = Field(max_length=36)
     title: CleanTitle
@@ -121,6 +125,26 @@ def upload(project_id: str, db: Db, user: CurrentUser, tasks: BackgroundTasks,
     except Exception:
         remove(key)
         raise
+    schedule(tasks, job.id)
+    return job_data(job)
+
+
+@router.post("/projects/{project_id}/papers/import", status_code=202, response_model=JobResponse)
+def import_paper(project_id: str, body: ImportRequest, db: Db, user: CurrentUser, tasks: BackgroundTasks):
+    require_project(db, user, project_id, write=True)
+    doi = normalize_doi(body.doi)
+    if not doi:
+        raise HTTPException(422, "A valid DOI is required for licensed import")
+    existing = db.scalar(select(Document.id).join(Paper).where(Document.project_id == project_id,
+                         Paper.doi == doi, Document.access == "licensed_full_text"))
+    if existing:
+        raise HTTPException(409, "The licensed full text is already in this project")
+    pending = db.scalar(select(Job.id).where(Job.project_id == project_id, Job.kind == "ingest",
+                        Job.status.in_(("queued", "running")), Job.payload["doi"].as_string() == doi,
+                        Job.payload["method"].as_string() == "licensed_full_text").limit(1))
+    if pending:
+        return job_data(db.get(Job, pending))
+    job = create_job(db, project_id, "ingest", {"doi": doi, "method": "licensed_full_text"})
     schedule(tasks, job.id)
     return job_data(job)
 

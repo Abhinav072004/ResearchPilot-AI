@@ -334,6 +334,18 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
           {nextOffset !== null && <button disabled={busy} onClick={() => searchLit(lastSearch.q, lastSearch.provider, nextOffset)}>Load more</button>}
         </>}
         {view === 'Library' && project && <>
+          {panel(<form className="inline" onSubmit={event => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const doi = String(new FormData(form).get('doi'));
+            void run(async () => {
+              setJob(await api<Job>(scope + '/papers/import', json({doi})));
+              form.reset();
+            });
+          }}>
+            <label className="grow">DOI for licensed full text<input name="doi" required maxLength={330} placeholder="10.…"/></label>
+            <button className="primary" disabled={busy}>Import from Europe PMC</button>
+          </form>)}
           {panel(<form className="stack" onSubmit={upload}>
             <div className="inline"><label className="grow">Paper title<input name="title" required maxLength={150}/></label>
               <label>Associated DOI (optional)<input name="doi" maxLength={330}/></label></div>
@@ -421,6 +433,12 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
       <p className="muted">{[selected.section, selected.page ? 'p. ' + selected.page : selected.anchor.xml_path, selected.access.replaceAll('_', ' ')].filter(Boolean).join(' · ')}</p>
       {selected.doi && <div><a href={safeUrl('https://doi.org/' + selected.doi)} target="_blank" rel="noreferrer">{selected.doi} <ArrowUpRight size={14}/></a>
         {selected.metadata.document_link === 'user_asserted' && <p className="muted">DOI association supplied by the uploader.</p>}</div>}
+      {safeUrl(selected.metadata.source_url ?? null) && <a href={safeUrl(selected.metadata.source_url ?? null)}
+        target="_blank" rel="noreferrer">Europe PMC full text <ArrowUpRight size={14}/></a>}
+      {safeUrl(selected.metadata.licence ?? null) && <p><a href={safeUrl(selected.metadata.licence ?? null)}
+        target="_blank" rel="noreferrer">Reuse licence <ArrowUpRight size={14}/></a></p>}
+      {selected.anchor.extractor === 'tesseract' && <p className="muted">OCR transcription
+        {typeof selected.anchor.ocr_confidence === 'number' ? ' · ' + selected.anchor.ocr_confidence.toFixed(1) + '% word confidence' : ''}</p>}
       <blockquote>{selected.text}</blockquote>
     </aside>}
   </div>;

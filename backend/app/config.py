@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     origin: str = ""
     upload_bytes: int = 15 * 1024 * 1024
     grobid_url: str = ""
+    ocr_languages: str = "eng"
     clamd_host: str = ""
     openalex_key: str = ""
     semantic_scholar_key: str = ""

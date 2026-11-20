@@ -1,0 +1,31 @@
+services:
+  object-store:
+    image: motoserver/moto:5.1.10
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  scanner:
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "clamdscan --ping 1"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 20
+
+  api:
+    environment: &integration_env
+      RP_S3_BUCKET: researchpilot-integration
+      RP_S3_ENDPOINT: http://object-store:5000
+      RP_CLAMD_HOST: scanner
+      AWS_ACCESS_KEY_ID: integration-fixture
+      AWS_SECRET_ACCESS_KEY: integration-fixture
+      AWS_DEFAULT_REGION: us-east-1
+      NO_PROXY: object-store,scanner,localhost,127.0.0.1
+      no_proxy: object-store,scanner,localhost,127.0.0.1
+  worker:
+    environment: *integration_env

@@ -1,12 +1,13 @@
 import re
-from dataclasses import replace
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from time import monotonic
 
 import httpx
 import pymupdf
 from defusedxml import ElementTree
 
 from app.config import settings
+from ingestion.ocr import recognize
 
 
 @dataclass(frozen=True)
@@ -36,19 +37,31 @@ def kind_for(text):
 def pdf_blocks(content):
     heading = "Document"
     blocks = []
+    ocr_deadline = monotonic() + 85
+    scans = 0
     with pymupdf.open(stream=content, filetype="pdf") as doc:
         if doc.is_encrypted or not 0 < len(doc) <= 250:
             raise ValueError("Encrypted, empty or oversized PDF")
         for page in doc:
-            for x0, y0, x1, y1, raw, _, type_id in page.get_text("blocks", sort=True):
-                if type_id != 0:
-                    continue
+            native = [(text.strip(), [x0, y0, x1, y1], None)
+                      for x0, y0, x1, y1, text, _, kind in page.get_text("blocks", sort=True)
+                      if kind == 0 and text.strip()]
+            page_blocks = native
+            if not native and page.get_image_info():
+                scans += 1
+                remaining = ocr_deadline - monotonic()
+                if scans > 35 or remaining <= 0:
+                    raise ValueError("Scanned PDF exceeds OCR processing limits. Split it into smaller files.")
+                page_blocks = recognize(page, timeout=min(18, remaining))
+            for raw, bounds, confidence in page_blocks:
                 text = re.sub(r"\s+", " ", raw).strip()
                 if HEADINGS.fullmatch(text):
                     heading = text
                 elif text:
-                    blocks.append(Block(heading, text, page.number + 1, kind_for(text),
-                                        {"bbox": [x0, y0, x1, y1], "extractor": "pymupdf"}))
+                    anchor = {"bbox": bounds, "extractor": "pymupdf" if confidence is None else "tesseract"}
+                    if confidence is not None:
+                        anchor["ocr_confidence"] = confidence
+                    blocks.append(Block(heading, text, page.number + 1, kind_for(text), anchor))
     return blocks
 
 

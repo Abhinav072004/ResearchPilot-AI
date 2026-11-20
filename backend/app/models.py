@@ -92,6 +92,7 @@ class Document(Identity, Base):
     paper_id: Mapped[str | None] = mapped_column(ForeignKey("papers.id"), index=True)
     title: Mapped[str] = mapped_column(Text)
     access: Mapped[str] = mapped_column(String(30), default="user_upload")
+    provenance: Mapped[dict | None] = mapped_column(Payload)
 
 
 class Section(Identity, Base):

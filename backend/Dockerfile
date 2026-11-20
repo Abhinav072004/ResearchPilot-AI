@@ -1,6 +1,9 @@
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN --mount=type=secret,id=researchpilot_build_ca \
     if [ -s /run/secrets/researchpilot_build_ca ]; then export PIP_CERT=/run/secrets/researchpilot_build_ca; fi \
