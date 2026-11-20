@@ -53,7 +53,7 @@ From **Actions → Verify and package → Run workflow**, select `main` and enab
 
 Allow outgoing HTTPS to the scholarly APIs you use. The built-in source hosts are `api.crossref.org`, `api.openalex.org`, `api.semanticscholar.org`, `export.arxiv.org`, `eutils.ncbi.nlm.nih.gov`, `www.ebi.ac.uk`, and `api.core.ac.uk`. OpenAlex and CORE use separately configured keys. Configure a model URL and credentials only for an approved provider. GROBID is optional and should use a private endpoint.
 
-For integration checks on a disposable stack, run `infrastructure/deployment/verify-integrations.sh` after building the local Compose images. It checks the S3 API against Moto and scans a clean file and an inert EICAR fixture with ClamAV. The release runs the same storage and scanner probe against the configured production services.
+For integration checks on a disposable stack, run `infrastructure/deployment/verify-integrations.sh` after building the local Compose images. It deploys the production Compose manifest with disposable dependencies, checks the S3 API against Moto, scans a clean file and an inert EICAR fixture with ClamAV, and runs the HTTP smoke over verified HTTPS. The release runs the same storage and scanner probe against the configured production services.
 
 For live validation from a permitted network, run from `backend`.
 
