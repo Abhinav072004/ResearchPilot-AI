@@ -122,3 +122,15 @@ def test_unavailable_europe_pmc_uses_verified_pmc_full_text(monkeypatch):
     assert article.record["provider"] == "pubmed_central"
     assert article.record["licence"] == LICENSE
     assert article.provenance["source_url"] == f"https://pmc.ncbi.nlm.nih.gov/articles/{PMCID}/"
+
+
+
+def test_article_level_nested_licence_links_are_verified(monkeypatch):
+    _, content = simulate_europe_pmc(monkeypatch)
+    outer = f'<license xlink:href="{LICENSE}"/>'.encode()
+    inner = f'<license><license-p><ext-link xlink:href="{LICENSE}">CC BY</ext-link></license-p></license>'.encode()
+    assert fulltext.verify_article(content.replace(outer, inner), DOI) == LICENSE
+    with pytest.raises(ValueError, match="eligible"):
+        fulltext.verify_article(content.replace(outer, inner.replace(
+            b"</license-p>", b'<ext-link xlink:href="https://creativecommons.org/licenses/by-nc/4.0/"/></license-p>'
+        )), DOI)

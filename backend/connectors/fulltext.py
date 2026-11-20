@@ -24,6 +24,10 @@ class ProviderUnavailable(ValueError):
     pass
 
 
+class MissingLicence(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class LicensedArticle:
     content: bytes
@@ -130,7 +134,19 @@ def verify_article(content, doi):
     if identifiers != {doi}:
         raise ValueError("The downloaded article DOI does not match the requested DOI")
     licences = metadata.findall("./permissions/license")
-    approved = {open_license(node.get("{http://www.w3.org/1999/xlink}href", "")) for node in licences}
+    href = "{http://www.w3.org/1999/xlink}href"
+    declarations = []
+    for node in licences:
+        # Some repositories put the canonical link in the license paragraph rather than on the element.
+        outer = node.get(href, "").strip()
+        inner = [link.get(href, "").strip() for link in node.iter("ext-link")]
+        linked = [uri for uri in [outer, *inner] if uri]
+        if not outer:
+            linked = [uri for uri in linked if "creativecommons.org" in uri.lower()]
+        declarations.extend(linked)
+    if not declarations:
+        raise MissingLicence("The article does not supply a machine-verifiable full-text licence")
+    approved = {open_license(uri) for uri in declarations}
     if len(approved) != 1 or None in approved:
         raise ValueError("The article does not declare an eligible Creative Commons full-text licence")
     return approved.pop()
@@ -143,12 +159,13 @@ def fetch(doi, limit):
     with httpx.Client(timeout=httpx.Timeout(12, connect=5), follow_redirects=False) as client:
         try:
             content, record, pmcid, url = europe_pmc_document(client, doi, limit)
-        except ProviderUnavailable as primary_error:
+            licence = verify_article(content, doi)
+        except (ProviderUnavailable, MissingLicence) as primary_error:
             try:
                 content, record, pmcid, url = pubmed_central_document(client, doi, limit)
+                licence = verify_article(content, doi)
             except ValueError as fallback_error:
                 raise ValueError(f"{primary_error}. {fallback_error}") from fallback_error
-    licence = verify_article(content, doi)
     record.update(licence=licence, access="licensed_full_text", url=url)
     return LicensedArticle(content, record, {
         "document_link": "verified_provider", "provider": record["provider"], "pmcid": pmcid,

@@ -10,7 +10,7 @@ NAMES = "|".join(re.escape(name) for name in sorted(METRICS, key=len, reverse=Tr
 UNITS = "|".join(re.escape(unit) for unit in sorted(
     {unit for schema in SCHEMAS.values() for units in schema.metrics.values() for unit in units}, key=len, reverse=True
 ))
-PATTERN = re.compile(rf"\b(?P<metric>(?i:{NAMES}))\s*(?i:was|of|=|:)\s*(?P<value>{VALUE})"
+PATTERN = re.compile(rf"\b(?P<metric>(?i:{NAMES}))\s*(?i:was|of|=|:)\s*(?P<value>{VALUE})(?!\d|\.\d|[eE][+-]?\d)"
                      rf"(?:\s*(?P<unit>{UNITS})(?![\w/])|(?=\s*[,;.)]|\s*$))")
 TEXT_CONTEXT = {key for schema in SCHEMAS.values() for key in schema.required_context} - {"temperature", "pressure"}
 TEXT_CONTEXT.add("catalyst")
@@ -21,7 +21,11 @@ CONDITIONS = {
     "steam_to_biomass_ratio": rf"\bsteam[- ]to[- ]biomass ratio\s*(?:of|was|=|:)\s*({VALUE})",
     **{key: rf"\b{re.escape(key)}\s*[:=]\s*([\w /+()-]{{1,80}})(?=[,;.]|$)" for key in TEXT_CONTEXT},
 }
-AMBIGUOUS = re.compile(r"\b(?:at least|at most|more than|less than|approximately|up to|ranged|between)\b|±", re.I)
+AMBIGUOUS = re.compile(
+    rf"\b(?:at least|at most|more than|less than|approximately|up to|ranged|between)\b|±"
+    rf"|\d(?:\s*(?:{UNITS}))?\s*[-–—]\s*\d",
+    re.I,
+)
 STUDY_MARKERS = {
     "experiment": r"\b(?:experimentally|experiment|experiments|measured|trial)\b",
     "simulation": r"\b(?:simulated|simulation|simulations|model predicted)\b",

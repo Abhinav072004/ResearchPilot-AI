@@ -133,6 +133,9 @@ def test_physics_units_are_case_sensitive_and_raw_value_is_preserved():
     observation, = list(extract("Measured electrical resistivity was 2.20 Ω·m at temperature of 290 K."))
     assert observation["domain"] == "physics" and observation["raw_value"] == "2.20"
     assert not list(extract("Measured electrical resistivity was 2.20 Ω·cm²."))
+    assert not list(extract("The trial reported odds ratio was 1.10–1.85."))
+    ratio, = list(extract("The trial reported odds ratio was 1.10."))
+    assert ratio["raw_value"] == "1.10" and ratio["unit"] == "unitless"
 
 
 def test_workspace_owner_grants_changes_and_revokes_roles(client):
