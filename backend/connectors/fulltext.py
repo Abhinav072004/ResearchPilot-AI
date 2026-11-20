@@ -54,12 +54,16 @@ def fetch(doi, limit):
     doi = normalize_doi(doi)
     if not doi:
         raise ValueError("A valid DOI is required for licensed import")
+    stage = "metadata search"
     try:
         with httpx.Client(timeout=httpx.Timeout(12, connect=5), follow_redirects=False) as client:
             data = json.loads(read_response(client, "/search", 512_000, {
-                "query": f'DOI:"{doi}" AND IN_PMC:Y', "format": "json", "resultType": "core", "pageSize": 10,
+                "query": f'DOI:"{doi}"', "format": "json", "resultType": "core", "pageSize": 10,
             }))
-            matching = [row for row in data["resultList"]["result"] if normalize_doi(row.get("doi")) == doi]
+            if not isinstance(data, dict) or not isinstance(data.get("resultList"), dict):
+                raise ValueError("Europe PMC returned an invalid search response")
+            matching = [row for row in data["resultList"].get("result", [])
+                        if isinstance(row, dict) and normalize_doi(row.get("doi")) == doi]
             eligible = [row for row in matching if row.get("isOpenAccess") == "Y" and row.get("title")
                         and PMCID.fullmatch(row.get("pmcid") or "")]
             if not eligible:
@@ -69,13 +73,14 @@ def fetch(doi, limit):
                    for row in matching):
                 raise ValueError("Retracted articles and retraction notices cannot be imported")
             pmcid = candidate["pmcid"]
+            stage = "full-text download"
             content = read_response(client, f"/{pmcid}/fullTextXML", limit)
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             raise ValueError("Europe PMC did not return full text for this DOI") from exc
-        raise ValueError("Europe PMC full-text service is unavailable") from exc
+        raise ValueError(f"Europe PMC {stage} returned HTTP {exc.response.status_code}") from exc
     except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise ValueError("Europe PMC full-text service is unavailable or returned invalid metadata") from exc
+        raise ValueError(f"Europe PMC {stage} failed ({type(exc).__name__})") from exc
 
     try:
         root = ElementTree.fromstring(content)
