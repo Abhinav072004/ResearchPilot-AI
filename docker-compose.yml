@@ -1,0 +1,99 @@
+x-app: &app
+  image: ${RP_API_IMAGE:-researchpilot-api:local}
+  build: ./backend
+  env_file: .env
+  environment:
+    RP_DATABASE_URL: ${RP_DATABASE_URL:-postgresql+psycopg://researchpilot:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres/researchpilot}
+    RP_REDIS_URL: ${RP_REDIS_URL:-redis://redis:6379/0}
+    RP_LOCAL_OBJECTS: /app/data/objects
+  volumes:
+    - objects:/app/data
+  security_opt: [no-new-privileges:true]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: researchpilot
+      POSTGRES_USER: researchpilot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U researchpilot -d researchpilot"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+  migrate:
+    <<: *app
+    command: ["python", "-m", "app.release"]
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    <<: *app
+    restart: unless-stopped
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  worker:
+    <<: *app
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker:celery", "worker", "--loglevel=INFO", "--concurrency=2"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker:celery inspect ping -d celery@$$HOSTNAME --timeout=5"]
+      interval: 15s
+      timeout: 8s
+      retries: 8
+    depends_on:
+      api: {condition: service_healthy}
+  scheduler:
+    <<: *app
+    restart: unless-stopped
+    command: ["celery", "-A", "app.worker:celery", "beat", "--loglevel=INFO", "--schedule=/app/data/celerybeat"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, glob, redis; assert glob.glob('/app/data/celerybeat*'); redis.Redis.from_url(os.environ['RP_REDIS_URL'], socket_timeout=2).ping()"]
+      interval: 10s
+      timeout: 4s
+      retries: 8
+    depends_on:
+      api: {condition: service_healthy}
+  gateway:
+    image: ${RP_FRONTEND_IMAGE:-researchpilot-frontend:local}
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      RP_SITE_ADDRESS: ${RP_SITE_ADDRESS:-http://:80}
+      NO_PROXY: api,localhost,127.0.0.1
+      no_proxy: api,localhost,127.0.0.1
+    depends_on:
+      api: {condition: service_healthy}
+    ports:
+      - "${RP_HTTP_BIND:-127.0.0.1:8080}:80"
+      - "${RP_HTTPS_BIND:-127.0.0.1:8443}:443"
+    volumes:
+      - caddy:/data
+      - caddy-config:/config
+  scanner:
+    image: clamav/clamav:1.4
+    profiles: [scanner]
+    restart: unless-stopped
+    volumes:
+      - clamav:/var/lib/clamav
+
+volumes:
+  postgres:
+  redis:
+  objects:
+  caddy:
+  caddy-config:
+  clamav:

@@ -1,0 +1,273 @@
+{
+  "name": "synthetic scholarly fixtures v1",
+  "corpus": [
+    {
+      "id": "a1",
+      "document_id": "a",
+      "title": "Pine Gasification",
+      "text": "The fixed-bed reactor used pine with a steam-to-biomass ratio of 0.6.",
+      "section": "Methods",
+      "section_id": "aMethods",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "a2",
+      "document_id": "a",
+      "title": "Pine Gasification",
+      "text": "At 800 \u00b0C, the experimental hydrogen yield was 12.00 mol/kg.",
+      "section": "Results",
+      "section_id": "aResults",
+      "doi": null,
+      "kind": "paragraph",
+      "metadata": {
+        "metric": "hydrogen yield"
+      }
+    },
+    {
+      "id": "a3",
+      "document_id": "a",
+      "title": "Pine Gasification",
+      "text": "Moisture was held constant and feedstock variation was not investigated.",
+      "section": "Limitations",
+      "section_id": "aLimitations",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "b1",
+      "document_id": "b",
+      "title": "Plastic Co-Gasification",
+      "text": "The bubbling fluidized bed used mixed plastic and wood as feedstock.",
+      "section": "Methods",
+      "section_id": "bMethods",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "b2",
+      "document_id": "b",
+      "title": "Plastic Co-Gasification",
+      "text": "Measured hydrogen yield was 9.50 mol/kg and tar concentration decreased after catalytic reforming.",
+      "section": "Results",
+      "section_id": "bResults",
+      "doi": null,
+      "kind": "paragraph",
+      "metadata": {
+        "metric": "hydrogen yield"
+      }
+    },
+    {
+      "id": "b3",
+      "document_id": "b",
+      "title": "Plastic Co-Gasification",
+      "text": "Future work should measure catalyst deactivation over repeated cycles.",
+      "section": "Future Work",
+      "section_id": "bFuture Work",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "c1",
+      "document_id": "c",
+      "title": "Albedo in Snowfields",
+      "text": "Albedo is defined as the fraction of incoming radiation reflected by a surface.",
+      "section": "Introduction",
+      "section_id": "cIntroduction",
+      "doi": "10.5555/fixture.albedo",
+      "kind": "paragraph"
+    },
+    {
+      "id": "c2",
+      "document_id": "c",
+      "title": "Albedo in Snowfields",
+      "text": "Snow grain size explained part of the variability in measured broadband albedo.",
+      "section": "Results",
+      "section_id": "cResults",
+      "doi": "10.5555/fixture.albedo",
+      "kind": "paragraph"
+    },
+    {
+      "id": "d1",
+      "document_id": "d",
+      "title": "Thermal Storage Survey",
+      "text": "The survey compares molten salts and phase-change materials for thermal energy storage.",
+      "section": "Results",
+      "section_id": "dResults",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "d2",
+      "document_id": "d",
+      "title": "Thermal Storage Survey",
+      "text": "Thermal energy storage research gaps include lifecycle cost and long-term corrosion.",
+      "section": "Limitations",
+      "section_id": "dLimitations",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "e1",
+      "document_id": "e",
+      "title": "Long-Life Batteries",
+      "text": "The lithium-ion cell was cycled in a 25 \u00b0C chamber at constant current.",
+      "section": "Methods",
+      "section_id": "eMethods",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "e2",
+      "document_id": "e",
+      "title": "Long-Life Batteries",
+      "text": "Capacity fell to eighty percent after repeated cycling at high temperature.",
+      "section": "Results",
+      "section_id": "eResults",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "f1",
+      "document_id": "f",
+      "title": "Solar Reflectors",
+      "text": "Figure 2. Solar reflectance of coated glass and aluminum.",
+      "section": "Results",
+      "section_id": "fResults",
+      "doi": null,
+      "kind": "figure_caption"
+    },
+    {
+      "id": "f2",
+      "document_id": "f",
+      "title": "Solar Reflectors",
+      "text": "Surface soiling reduces solar reflectance in arid regions.",
+      "section": "Conclusions",
+      "section_id": "fConclusions",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "g1",
+      "document_id": "g",
+      "title": "Industrial Heat Recovery",
+      "text": "A numerical model estimated exchanger efficiency under steady-state operation.",
+      "section": "Methods",
+      "section_id": "gMethods",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "g2",
+      "document_id": "g",
+      "title": "Industrial Heat Recovery",
+      "text": "Table 1. Predicted efficiency by exhaust temperature and mass flow.",
+      "section": "Results",
+      "section_id": "gResults",
+      "doi": null,
+      "kind": "table"
+    },
+    {
+      "id": "h1",
+      "document_id": "h",
+      "title": "Catalyst Regeneration",
+      "text": "The catalyst recovered initial activity after a single regeneration cycle.",
+      "section": "Results",
+      "section_id": "hResults",
+      "doi": null,
+      "kind": "paragraph"
+    },
+    {
+      "id": "h2",
+      "document_id": "h",
+      "title": "Catalyst Regeneration",
+      "text": "Long-term repeated regeneration was outside the experiment's scope.",
+      "section": "Limitations",
+      "section_id": "hLimitations",
+      "doi": null,
+      "kind": "paragraph"
+    }
+  ],
+  "questions": [
+    {
+      "query": "Find the paper 10.5555/fixture.albedo",
+      "relevant": [
+        "c1",
+        "c2"
+      ]
+    },
+    {
+      "query": "Find the paper Long-Life Batteries",
+      "relevant": [
+        "e1",
+        "e2"
+      ]
+    },
+    {
+      "query": "What is albedo?",
+      "relevant": [
+        "c1"
+      ]
+    },
+    {
+      "query": "Find \"bubbling fluidized bed\"",
+      "relevant": [
+        "b1"
+      ]
+    },
+    {
+      "query": "How much hydrogen yield was measured?",
+      "relevant": [
+        "a2",
+        "b2"
+      ]
+    },
+    {
+      "query": "Compare hydrogen yield in pine gasification and plastic co-gasification",
+      "relevant": [
+        "a2",
+        "b2"
+      ]
+    },
+    {
+      "query": "Literature review of thermal energy storage research gaps",
+      "relevant": [
+        "d1",
+        "d2"
+      ]
+    },
+    {
+      "query": "Recommend how to identify catalyst deactivation",
+      "relevant": [
+        "b3",
+        "h1",
+        "h2"
+      ]
+    },
+    {
+      "query": "Which figure shows solar reflectance of coated glass?",
+      "relevant": [
+        "f1"
+      ]
+    },
+    {
+      "query": "Which table shows simulated exchanger efficiency?",
+      "relevant": [
+        "g2"
+      ]
+    },
+    {
+      "query": "Which feedstock was used in the fixed-bed reactor?",
+      "relevant": [
+        "a1"
+      ]
+    },
+    {
+      "query": "What operating condition affected battery capacity?",
+      "relevant": [
+        "e1",
+        "e2"
+      ]
+    }
+  ]
+}

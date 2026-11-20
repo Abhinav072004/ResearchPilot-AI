@@ -1,0 +1,20 @@
+services:
+  migrate:
+    build:
+      secrets: [researchpilot_build_ca]
+  api:
+    build:
+      secrets: [researchpilot_build_ca]
+  worker:
+    build:
+      secrets: [researchpilot_build_ca]
+  scheduler:
+    build:
+      secrets: [researchpilot_build_ca]
+  gateway:
+    build:
+      secrets: [researchpilot_build_ca]
+
+secrets:
+  researchpilot_build_ca:
+    file: ${RP_BUILD_CA_FILE:?Set RP_BUILD_CA_FILE to a trusted CA bundle}
