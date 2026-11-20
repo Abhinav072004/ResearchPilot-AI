@@ -77,3 +77,8 @@ if __name__ == "__main__":
     print(json.dumps(result, indent=2))
     if os.getenv("GITHUB_STEP_SUMMARY"):
         summarize(result, os.environ["GITHUB_STEP_SUMMARY"])
+        print(f"::notice title=SciFact coverage::{result['corpus_abstracts']} abstracts, "
+              f"{result['labeled_claims']} evidence-labeled claims, SHA-256 {result['archive_sha256']}")
+        for name, metrics in result["modes"].items():
+            scores = ", ".join(f"{metric}={value}" for metric, value in metrics.items())
+            print(f"::notice title=SciFact {name}::{scores}")

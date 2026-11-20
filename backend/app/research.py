@@ -14,12 +14,12 @@ from app.analysis import compare, observation_data
 from app.auth import CurrentUser, Db, require_project
 from app.config import settings
 from app.db import Session
-from app.models import Asset, AuditEvent, Document, DocumentArtifact, Experiment, Job, JobEvent, Membership, Observation, Paper, Passage, Project, ResearchQuery, RetrievalRun, Section, Usage
+from app.models import Asset, AuditEvent, Conversation, Document, DocumentArtifact, Experiment, Job, JobEvent, Membership, Observation, Paper, Passage, Project, ResearchQuery, RetrievalRun, Section, Usage
 from app.schemas import EvidenceResponse, JobResponse, RetrievalResponse
 from app.reports import MIME, references
 from app.storage import get, put, remove
 from app.worker import schedule
-from app.workspace import CleanTitle, require_conversation
+from app.workspace import CleanTitle
 from connectors.scholarly import normalize_doi
 from ingestion.domains import Domain
 from rag.engine import plan
@@ -283,8 +283,10 @@ def research(project_id: str, body: ResearchRequest, db: Db, user: CurrentUser, 
         raise HTTPException(422, "External synthesis requires an approved provider and at least three model calls per run")
     if body.external_model and not (config.llm_url and config.llm_model and config.llm_key and config.llm_max_calls > 0):
         raise HTTPException(422, "External model access is not configured")
-    if body.conversation_id and require_conversation(db, user, body.conversation_id, write=True).project_id != project_id:
-        raise HTTPException(404, "Conversation not found in this project")
+    if body.conversation_id:
+        linked = db.get(Conversation, body.conversation_id)
+        if linked is None or linked.project_id != project_id:
+            raise HTTPException(404, "Conversation not found in this project")
     job = Job(project_id=project_id, kind="research", payload=body.model_dump())
     db.add(job)
     db.flush()
