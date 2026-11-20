@@ -46,6 +46,8 @@ jobs:
       - name: Check deployed database models
         run: docker compose exec -T api alembic check
       - name: Deploy and test a disposable production HTTPS stack
+        env:
+          RP_LIVE_DISCOVERY_SMOKE: ${{ github.event_name != 'pull_request' && '1' || '0' }}
         run: infrastructure/deployment/verify-integrations.sh
       - name: Collect deployment output
         if: failure()

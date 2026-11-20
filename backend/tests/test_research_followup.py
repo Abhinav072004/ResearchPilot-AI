@@ -7,7 +7,7 @@ from agents import supervisor
 from app.config import settings
 from app.db import Session
 from app.main import app
-from app.models import Job, RetrievalRun
+from app.models import Job, ResearchQuery, RetrievalRun
 from ingestion import docling_client
 from ingestion.observations import extract
 from test_application import BASE, account, get_job, project, upload
@@ -21,9 +21,11 @@ def test_research_discovers_imports_cites_and_reuses_licensed_paper(client, monk
     })
     account(client, "autodiscovery@example.test")
     scope = project(client)
+    conversation = client.post(scope + "/conversations", json={"title": "Discovery history"}).json()["id"]
     for reused in (False, True):
         response = client.post(scope + "/research", json={"query": f"What hydrogen yield was reported in {DOI}?",
-                                                          "discover": True, "domain": "chemical_engineering"})
+                                                          "discover": True, "domain": "chemical_engineering",
+                                                          "conversation_id": conversation})
         assert response.status_code == 202
         job_id = response.json()["id"]
         run = get_job(client, job_id)
@@ -37,6 +39,8 @@ def test_research_discovers_imports_cites_and_reuses_licensed_paper(client, monk
         with Session() as db:
             measurement = db.scalar(select(RetrievalRun).where(RetrievalRun.job_id == job_id))
             assert measurement.returned and measurement.elapsed_ms >= 0
+            history = db.scalar(select(ResearchQuery).where(ResearchQuery.job_id == job_id))
+            assert history.conversation_id == conversation and history.domain == "chemical_engineering"
     assert len(calls) == 2 and len(client.get(scope + "/papers").json()) == 1
 
 
@@ -92,6 +96,10 @@ def test_table_cells_and_reference_are_stored_as_citable_artifacts(client):
     assert observation["value"] == "98.20" and observation["unit"] == "%"
     assert observation["measurement_anchor"] == {"row": 1, "column": 1}
     assert observation["passage_id"] == table["passage_id"]
+    experiments = client.get(scope + "/experiments", params={"domain": "medicine"}).json()
+    experiment, = experiments
+    assert experiment["id"] == observation["experiment_id"]
+    assert experiment["conditions"]["population"] == "adults"
     assert client.get(scope + "/observations", params={"domain": "physics"}).json() == []
 
 

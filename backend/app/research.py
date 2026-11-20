@@ -14,12 +14,12 @@ from app.analysis import compare, observation_data
 from app.auth import CurrentUser, Db, require_project
 from app.config import settings
 from app.db import Session
-from app.models import Asset, AuditEvent, Document, DocumentArtifact, Job, JobEvent, Membership, Observation, Paper, Passage, Project, RetrievalRun, Section, Usage
+from app.models import Asset, AuditEvent, Document, DocumentArtifact, Experiment, Job, JobEvent, Membership, Observation, Paper, Passage, Project, ResearchQuery, RetrievalRun, Section, Usage
 from app.schemas import EvidenceResponse, JobResponse, RetrievalResponse
 from app.reports import MIME, references
 from app.storage import get, put, remove
 from app.worker import schedule
-from app.workspace import CleanTitle
+from app.workspace import CleanTitle, require_conversation
 from connectors.scholarly import normalize_doi
 from ingestion.domains import Domain
 from rag.engine import plan
@@ -51,6 +51,7 @@ class RetrievalRequest(Question):
 
 class ResearchRequest(Question):
     domain: Domain = Domain.AUTO
+    conversation_id: str | None = Field(None, max_length=36)
     external_model: bool = False
     discover: bool = False
     synthesize: bool = False
@@ -282,7 +283,14 @@ def research(project_id: str, body: ResearchRequest, db: Db, user: CurrentUser, 
         raise HTTPException(422, "External synthesis requires an approved provider and at least three model calls per run")
     if body.external_model and not (config.llm_url and config.llm_model and config.llm_key and config.llm_max_calls > 0):
         raise HTTPException(422, "External model access is not configured")
-    job = create_job(db, project_id, "research", body.model_dump())
+    if body.conversation_id and require_conversation(db, user, body.conversation_id, write=True).project_id != project_id:
+        raise HTTPException(404, "Conversation not found in this project")
+    job = Job(project_id=project_id, kind="research", payload=body.model_dump())
+    db.add(job)
+    db.flush()
+    db.add(ResearchQuery(project_id=project_id, job_id=job.id, conversation_id=body.conversation_id,
+                         query=body.query, intent=plan(body.query).intent, domain=body.domain.value))
+    db.commit()
     schedule(tasks, job.id)
     return job_data(job)
 
@@ -297,6 +305,19 @@ def observations(project_id: str, db: Db, user: CurrentUser, metric: str | None 
         query = query.where(Observation.metric == metric.lower())
     return [observation_data(row, doc) for row, doc in db.execute(
         query.order_by(Observation.id).offset(max(0, offset)).limit(100))]
+
+
+@router.get("/projects/{project_id}/experiments")
+def experiments(project_id: str, db: Db, user: CurrentUser, domain: Domain = Domain.AUTO, offset: int = 0):
+    require_project(db, user, project_id)
+    query = (select(Experiment, Document).join(Document, Document.id == Experiment.document_id)
+             .outerjoin(Paper, Paper.id == Document.paper_id)
+             .where(Document.project_id == project_id, Paper.id.is_(None) | Paper.retracted.is_(False)))
+    if domain != Domain.AUTO:
+        query = query.where(Experiment.domain == domain)
+    return [{"id": run.id, "document_id": doc.id, "title": doc.title, "passage_id": run.passage_id,
+             "domain": run.domain, "study_type": run.study_type, "conditions": run.conditions}
+            for run, doc in db.execute(query.order_by(Experiment.id).offset(max(0, offset)).limit(100))]
 
 
 @router.post("/projects/{project_id}/compare")

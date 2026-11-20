@@ -41,4 +41,6 @@ JSON endpoints use /api/v1. Collection endpoints take pagination where applicabl
 The generated OpenAPI schema describes the implemented contract. The architecture table includes later endpoints.
 
 
-A research request can set `discover: true` to verify metadata leads and fetch licensed full text within the run budget. `domain` selects a structured-data profile and defaults to `auto`. SSE job snapshots can carry verified excerpts before synthesis finishes. The workspace owner grants roles to existing accounts. Roles apply to the workspace's projects. Membership is rechecked while a stream is open.
+Research requests can link to a conversation in the same project. A research request can set `discover: true` to verify metadata leads and fetch licensed full text within the run budget. `domain` selects a structured-data profile and defaults to `auto`. SSE job snapshots can carry verified excerpts before synthesis finishes. The workspace owner grants roles to existing accounts. Roles apply to the workspace's projects. Membership is rechecked while a stream is open.
+
+`GET /projects/{project_id}/experiments` returns extracted experimental or simulation contexts, linked to their source passages and optionally filtered by domain.

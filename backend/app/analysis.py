@@ -30,7 +30,7 @@ def facets(text):
 def observation_data(row, document):
     return {"id": row.id, "passage_id": row.passage_id, "document_id": document.id, "title": document.title,
             "metric": row.metric, "value": row.raw_value, "unit": row.unit, "study_type": row.study_type,
-            "conditions": row.conditions, "confidence": row.confidence, "domain": row.domain, "measurement_anchor": row.measurement_anchor}
+            "conditions": row.conditions, "confidence": row.confidence, "domain": row.domain, "measurement_anchor": row.measurement_anchor, "experiment_id": row.experiment_id}
 
 
 def compare(db, project_id, document_ids, metric, domain=Domain.AUTO):

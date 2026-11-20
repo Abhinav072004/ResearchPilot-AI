@@ -208,7 +208,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
         const item = await api<{messages: typeof messages}>('/conversations/' + conversation);
         setMessages(item.messages);
       }
-      setJob(await api<Job>(scope + '/research', json({query, domain: data.get('domain'), discover: data.has('discover'), external_model: data.has('model') || data.has('synthesis'), synthesize: data.has('synthesis')})));
+      setJob(await api<Job>(scope + '/research', json({query, conversation_id: conversation || null, domain: data.get('domain'), discover: data.has('discover'), external_model: data.has('model') || data.has('synthesis'), synthesize: data.has('synthesis')})));
     });
   }
 

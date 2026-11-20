@@ -5,7 +5,7 @@ from sqlalchemy import select, text
 
 from app.config import settings
 from app.literature import persist
-from app.models import Asset, Document, DocumentArtifact, Observation, Paper, Passage, Project, Section
+from app.models import Asset, Document, DocumentArtifact, Experiment, Observation, Paper, Passage, Project, Section
 from app.storage import get, malware_check, put, remove
 from connectors import fulltext
 from ingestion.bibliography import bibliography
@@ -88,6 +88,7 @@ def store_document(db, asset, paper, title, provenance, blocks, bibliography):
     db.add(document)
     db.flush()
     sections, passages, observations, artifacts = [], [], [], []
+    experiments = {}
     for index, block in enumerate(blocks):
         if not sections or sections[-1].heading != block.heading:
             sections.append(Section(id=str(uuid4()), document_id=document.id,
@@ -100,10 +101,23 @@ def store_document(db, asset, paper, title, provenance, blocks, bibliography):
                                               ordinal=index, payload=block.structure))
         if block.kind != "reference":
             measurements = extract_table(block.structure) if block.kind == "table" and block.structure else extract(block.text)
-            observations.extend(Observation(passage_id=passage.id, **data) for data in measurements)
+            for data in measurements:
+                experiment_id = None
+                if data["study_type"] in {"experiment", "simulation"}:
+                    context = data["conditions"]
+                    key = (passage.id, data["domain"], data["study_type"], tuple(sorted(context.items())))
+                    experiment = experiments.get(key)
+                    if experiment is None:
+                        experiment = Experiment(id=str(uuid4()), document_id=document.id, passage_id=passage.id,
+                                                domain=data["domain"], study_type=data["study_type"], conditions=context)
+                        experiments[key] = experiment
+                    experiment_id = experiment.id
+                observations.append(Observation(passage_id=passage.id, experiment_id=experiment_id, **data))
     db.add_all(sections)
     db.flush()
     db.add_all(passages)
+    db.flush()
+    db.add_all(experiments.values())
     db.flush()
     db.add_all(observations)
     db.add_all(artifacts)

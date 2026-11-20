@@ -41,7 +41,9 @@ trap cleanup EXIT
 "${compose[@]}" exec -T gateway cat /data/caddy/pki/authorities/local/root.crt > "$test_dir/caddy.crt"
 (
     cd backend
+    smoke_flags=()
+    if [[ ${RP_LIVE_DISCOVERY_SMOKE:-0} == 1 ]]; then smoke_flags+=(--licensed-discovery); fi
     SSL_CERT_FILE="$test_dir/caddy.crt" NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1 \
-        "$python_command" -m evaluation.http_smoke "$test_origin"
+        "$python_command" -m evaluation.http_smoke "$test_origin" "${smoke_flags[@]}"
 )
 "${compose[@]}" exec -T api alembic check

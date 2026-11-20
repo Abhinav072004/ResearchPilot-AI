@@ -140,6 +140,15 @@ class DocumentArtifact(Identity, Base):
     payload: Mapped[dict] = mapped_column(Payload)
 
 
+class Experiment(Identity, Base):
+    __tablename__ = "extracted_experiments"
+    document_id: Mapped[str] = mapped_column(ForeignKey("document_versions.id", ondelete="CASCADE"), index=True)
+    passage_id: Mapped[str] = mapped_column(ForeignKey("passages.id", ondelete="CASCADE"), index=True)
+    domain: Mapped[str] = mapped_column(String(32))
+    study_type: Mapped[str] = mapped_column(String(30))
+    conditions: Mapped[dict] = mapped_column(Payload)
+
+
 class Observation(Identity, Base):
     __tablename__ = "experimental_observations"
     passage_id: Mapped[str] = mapped_column(ForeignKey("passages.id", ondelete="CASCADE"), index=True)
@@ -153,6 +162,9 @@ class Observation(Identity, Base):
     conditions: Mapped[dict] = mapped_column(Payload)
     confidence: Mapped[str] = mapped_column(String(20))
     measurement_anchor: Mapped[dict | None] = mapped_column(Payload)
+    experiment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("extracted_experiments.id", name="fk_observation_experiment"), index=True
+    )
 
 
 class Job(Identity, Base):
@@ -166,6 +178,16 @@ class Job(Identity, Base):
     created: Mapped[float] = mapped_column(Float, default=time)
     updated: Mapped[float] = mapped_column(Float, default=time, onupdate=time)
     approval: Mapped[bool | None] = mapped_column(Boolean)
+
+
+class ResearchQuery(Identity, Base):
+    __tablename__ = "research_queries"
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), unique=True)
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id", ondelete="SET NULL"), index=True)
+    query: Mapped[str] = mapped_column(Text)
+    intent: Mapped[str] = mapped_column(String(30))
+    domain: Mapped[str] = mapped_column(String(32))
 
 
 class JobEvent(Identity, Base):
