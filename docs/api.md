@@ -15,7 +15,7 @@ JSON endpoints use /api/v1. Collection endpoints take pagination where applicabl
 | GET /literature/search | Query, provider, limit, cursor → source records |
 | GET /literature/doi | DOI → verified metadata and access classification |
 | POST /projects/{project_id}/papers | Multipart authorized upload → ingestion job |
-| POST /projects/{project_id}/papers/import | DOI → queued Europe PMC licence and full-text import |
+| POST /projects/{project_id}/papers/import | DOI → queued scholarly licence and full-text import |
 | GET /projects/{project_id}/papers | → available versions and ingestion states |
 | GET /projects/{project_id}/papers/{document_id}/passages | Offset → page-anchored passages |
 | GET /projects/{project_id}/papers/{document_id}/original | → authorized original download |

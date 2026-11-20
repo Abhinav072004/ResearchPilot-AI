@@ -19,14 +19,14 @@ def check_crossref():
     return f"Resolved {DOI} and checked the article title."
 
 
-def check_europe_pmc():
+def check_full_text():
     article = fetch(DOI, 15 * 1024 * 1024)
     if article.record["doi"] != DOI or not article.provenance["licence"].startswith("https://creativecommons.org/"):
-        raise ValueError("Unexpected Europe PMC identity or licence for the benchmark DOI")
+        raise ValueError("Unexpected full-text article identity or licence for the benchmark DOI")
     blocks = parse(article.content, "application/xml")
     if len(blocks) <= 10 or not any("PRISMA" in block.text for block in blocks):
         raise ValueError("The imported JATS did not contain the expected PRISMA article content")
-    return f"Verified the reuse licence and parsed {len(blocks)} blocks."
+    return f"Fetched from {article.provenance['provider']}, verified the reuse licence, and parsed {len(blocks)} blocks."
 
 
 def report(provider, check):
@@ -47,5 +47,5 @@ def report(provider, check):
 
 
 if __name__ == "__main__":
-    results = (report("Crossref", check_crossref), report("Europe PMC", check_europe_pmc))
+    results = (report("Crossref", check_crossref), report("Licensed full text", check_full_text))
     raise SystemExit(0 if all(results) else 1)

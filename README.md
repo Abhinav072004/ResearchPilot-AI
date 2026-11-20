@@ -35,7 +35,7 @@ In another shell, `cd frontend && npm ci && npm run dev`. Vite proxies same-orig
 
 The workspace provides accounts, projects and conversations, scholarly search and DOI resolution, page-anchored PDF and structured XML ingestion, six adaptive retrieval routes, checkpointed research with claim-level excerpts, guarded comparison, and Markdown, DOCX and PDF exports. Document processing and report generation run as jobs. After project-user approval, an optional LLM can rerank passages and propose a synthesis. Synthesized claims require stored quotes and a separate model judgment and are labeled in the report. The default workflow extracts and verifies quotes locally.
 
-The PDF pipeline extracts native text and runs Tesseract on scanned pages without a text layer. GROBID can enrich structure. The Library can import eligible Europe PMC full text by DOI and preserve the source and reuse licence with every excerpt. Scholarly provider availability, licence, retraction coverage and full-text access vary by source. Docling, deep table-cell extraction, broader domain ontologies and team administration remain outside the current release.
+The PDF pipeline extracts native text and runs Tesseract on scanned pages without a text layer. GROBID can enrich structure. The Library can import eligible full text from Europe PMC or PubMed Central by DOI and preserve the source and reuse licence with every excerpt. Scholarly provider availability, licence, retraction coverage and full-text access vary by source. Docling, deep table-cell extraction, broader domain ontologies and team administration remain outside the current release.
 
 ## Deploy with GitHub Actions
 

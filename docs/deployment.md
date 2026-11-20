@@ -31,7 +31,7 @@ python -m evaluation.browser_smoke http://localhost:8080
 
 ## GitHub Actions production deployment
 
-The **Verify and package** workflow exercises the frontend build, backend tests, migrations, a Compose HTTP smoke, dependency audits, S3-compatible operations and ClamAV detection. On trusted repository pushes it also runs a public Crossref and licensed Europe PMC check. A version tag or a manually requested production release publishes the API and gateway images to GitHub Container Registry. Deployment requires passing checks and uses image digests.
+The **Verify and package** workflow exercises the frontend build, backend tests, migrations, a Compose HTTP smoke, dependency audits, S3-compatible operations and ClamAV detection. On trusted repository pushes it also runs a public Crossref and licensed full-text check. Verified main-branch pushes, version tags and manually requested production releases publish SHA-tagged API and gateway images to GitHub Container Registry. Deployment requires passing checks and uses image digests.
 
 Prepare a Linux Docker host with Compose v2, an SSH user authorized to run Docker, enough memory for ClamAV, and a DNS name resolving to the host. Publish ports 80 and 443 for Caddy. Use a private PostgreSQL endpoint with `sslmode=verify-full`, authenticated private Redis, and a private encrypted S3 bucket. Grant the runtime identity the minimum required object permissions for project keys and the temporary `release-health/` prefix. Configure GHCR pull access on the host for private images. Keep the API and workers on the private Compose network.
 
@@ -51,7 +51,7 @@ Configure a `production` environment in the repository's GitHub settings with th
 
 From **Actions → Verify and package → Run workflow**, select `main` and enable **production**. To deploy automatically on version tags, set the repository variable `DEPLOY_ON_TAG=true` and protect release tags. The job pulls the pinned images, verifies the configured S3 bucket and ClamAV before installing the application, runs migrations, starts workers and gateways, and checks HTTPS readiness. Its release pointer advances after that check passes.
 
-Allow outgoing HTTPS to the scholarly APIs you use. The built-in source hosts are `api.crossref.org`, `api.openalex.org`, `api.semanticscholar.org`, `export.arxiv.org`, `eutils.ncbi.nlm.nih.gov`, `www.ebi.ac.uk`, and `api.core.ac.uk`. OpenAlex and CORE use separately configured keys. Configure a model URL and credentials only for an approved provider. GROBID is optional and should use a private endpoint.
+Allow outgoing HTTPS to the scholarly APIs you use. The built-in source hosts are `api.crossref.org`, `api.openalex.org`, `api.semanticscholar.org`, `export.arxiv.org`, `eutils.ncbi.nlm.nih.gov`, `www.ebi.ac.uk`, `pmc.ncbi.nlm.nih.gov`, and `api.core.ac.uk`. OpenAlex and CORE use separately configured keys. Configure a model URL and credentials only for an approved provider. GROBID is optional and should use a private endpoint.
 
 For integration checks on a disposable stack, run `infrastructure/deployment/verify-integrations.sh` after building the local Compose images. It deploys the production Compose manifest with disposable dependencies, checks the S3 API against Moto, scans a clean file and an inert EICAR fixture with ClamAV, and runs the HTTP smoke over verified HTTPS. The release runs the same storage and scanner probe against the configured production services.
 

@@ -15,6 +15,6 @@ Private uploads require permission from the user. Keep confidential projects on 
 
 ## Licensed imports and OCR
 
-The importer addresses fixed Europe PMC API endpoints, disables redirects, bounds response size and time, and checks both the metadata search match and the DOI embedded in the article. Eligible JATS documents declare CC BY or CC0 in their article-level licence. The application preserves authorship metadata, source URL and licence with the evidence. Imported originals stay private to the project and go through the same scanner as uploads.
+The importer addresses fixed Europe PMC and PubMed Central endpoints, disables redirects, bounds response size and time, and checks both the metadata search match and the DOI embedded in the article. PubMed Central is used when Europe PMC is unavailable, with Crossref confirming the DOI. Eligible JATS documents declare CC BY or CC0 in their article-level licence. The application preserves authorship metadata, source URL and licence with the evidence. Imported originals stay private to the project and go through the same scanner as uploads.
 
 OCR runs Tesseract on bounded grayscale renderings when a PDF page has images without a native text layer. The worker records the original page number, coordinates, extraction engine and average word confidence. Page count, pixel count, per-page time and overall OCR time are limited. OCR confidence is distinct from the accuracy of a scientific claim.

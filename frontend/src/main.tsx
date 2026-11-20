@@ -344,7 +344,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
             });
           }}>
             <label className="grow">DOI for licensed full text<input name="doi" required maxLength={330} placeholder="10.…"/></label>
-            <button className="primary" disabled={busy}>Import from Europe PMC</button>
+            <button className="primary" disabled={busy}>Import licensed full text</button>
           </form>)}
           {panel(<form className="stack" onSubmit={upload}>
             <div className="inline"><label className="grow">Paper title<input name="title" required maxLength={150}/></label>
@@ -434,7 +434,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
       {selected.doi && <div><a href={safeUrl('https://doi.org/' + selected.doi)} target="_blank" rel="noreferrer">{selected.doi} <ArrowUpRight size={14}/></a>
         {selected.metadata.document_link === 'user_asserted' && <p className="muted">DOI association supplied by the uploader.</p>}</div>}
       {safeUrl(selected.metadata.source_url ?? null) && <a href={safeUrl(selected.metadata.source_url ?? null)}
-        target="_blank" rel="noreferrer">Europe PMC full text <ArrowUpRight size={14}/></a>}
+        target="_blank" rel="noreferrer">Published full text <ArrowUpRight size={14}/></a>}
       {safeUrl(selected.metadata.licence ?? null) && <p><a href={safeUrl(selected.metadata.licence ?? null)}
         target="_blank" rel="noreferrer">Reuse licence <ArrowUpRight size={14}/></a></p>}
       {selected.anchor.extractor === 'tesseract' && <p className="muted">OCR transcription

@@ -98,3 +98,27 @@ def test_image_only_pdf_becomes_searchable_with_page_and_ocr_anchors(client):
     assert passage["anchor"]["extractor"] == "tesseract"
     assert 0 <= passage["anchor"]["ocr_confidence"] <= 100
     assert passage["anchor"]["bbox"][2] > passage["anchor"]["bbox"][0]
+
+
+def test_unavailable_europe_pmc_uses_verified_pmc_full_text(monkeypatch):
+    import httpx
+
+    _, jats = simulate_europe_pmc(monkeypatch)
+
+    def read_response(client, path, limit, params=None, *, base=fulltext.EUROPE_PMC):
+        if base == fulltext.EUROPE_PMC:
+            raise httpx.ReadTimeout("fixture timeout")
+        if base == fulltext.PMC:
+            assert params["ids"] == DOI
+            return json.dumps({"records": [{"doi": DOI, "pmcid": PMCID}]}).encode()
+        assert base == fulltext.ENTREZ and params["id"] == PMCID[3:]
+        return b"<pmc-articleset>" + jats + b"</pmc-articleset>"
+
+    monkeypatch.setattr(fulltext, "read_response", read_response)
+    monkeypatch.setattr(fulltext, "resolve_doi", lambda doi, bucket: {
+        "doi": doi, "retracted": False, "publication_type": "journal-article",
+    })
+    article = fulltext.fetch(DOI, 200_000)
+    assert article.record["provider"] == "pubmed_central"
+    assert article.record["licence"] == LICENSE
+    assert article.provenance["source_url"] == f"https://pmc.ncbi.nlm.nih.gov/articles/{PMCID}/"
