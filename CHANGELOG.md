@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Redesigned sign-in and the research workspace for desktop and mobile, with an evidence drawer, prompt examples, saved research history and a conversation composer.
+- Saved each submitted research question with its run in the same transaction and added polling recovery when the live response stream disconnects.
+
 - Added licensed discovery-to-ingestion within research runs and streaming of verified excerpts.
 - Added discipline-specific measurement profiles, table-cell provenance, normalized paper metadata and workspace role management.
 - Added a SciFact benchmark job and optional private Docling table extraction.

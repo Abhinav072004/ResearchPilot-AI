@@ -33,7 +33,10 @@ export interface Result {
   gaps?: string[]; intent?: string; formats?: string[]; approval?: {purpose: string};
   metadata_leads?: Source[]; imported_papers?: {doi: string; document_id: string; reused: boolean}[]; comparisons?: Record<string, Comparison>;
 }
-export interface Job { id: string; kind: string; status: string; error: string | null; result: Result | null }
+export interface Job {
+  id: string; kind: string; status: string; error: string | null; result: Result | null;
+  title?: string | null; conversation_id?: string | null;
+}
 export interface Activity { stage: string; created: number }
 
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {

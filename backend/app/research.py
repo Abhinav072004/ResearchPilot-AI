@@ -14,7 +14,7 @@ from app.analysis import compare, observation_data
 from app.auth import CurrentUser, Db, require_project
 from app.config import settings
 from app.db import Session
-from app.models import Asset, AuditEvent, Conversation, Document, DocumentArtifact, Experiment, Job, JobEvent, Membership, Observation, Paper, Passage, Project, ResearchQuery, RetrievalRun, Section, Usage
+from app.models import Asset, AuditEvent, Conversation, Document, DocumentArtifact, Experiment, Job, JobEvent, Membership, Message, Observation, Paper, Passage, Project, ResearchQuery, RetrievalRun, Section, Usage
 from app.schemas import EvidenceResponse, JobResponse, RetrievalResponse
 from app.reports import MIME, references
 from app.storage import get, put, remove
@@ -52,6 +52,7 @@ class RetrievalRequest(Question):
 class ResearchRequest(Question):
     domain: Domain = Domain.AUTO
     conversation_id: str | None = Field(None, max_length=36)
+    record_message: bool = False
     external_model: bool = False
     discover: bool = False
     synthesize: bool = False
@@ -96,7 +97,9 @@ def job_data(job, *, summary=False):
     result = job.result
     if job.kind == "report" and result:
         result = {"formats": result["formats"]}
+    title_key = "query" if job.kind == "research" else "title"
     return {"id": job.id, "kind": job.kind, "status": job.status, "error": job.error,
+            "title": job.payload.get(title_key), "conversation_id": job.payload.get("conversation_id"),
             "created": job.created, "result": None if summary else result}
 
 
@@ -283,6 +286,8 @@ def research(project_id: str, body: ResearchRequest, db: Db, user: CurrentUser, 
         raise HTTPException(422, "External synthesis requires an approved provider and at least three model calls per run")
     if body.external_model and not (config.llm_url and config.llm_model and config.llm_key and config.llm_max_calls > 0):
         raise HTTPException(422, "External model access is not configured")
+    if body.record_message and not body.conversation_id:
+        raise HTTPException(422, "A conversation is required to save a message")
     if body.conversation_id:
         linked = db.get(Conversation, body.conversation_id)
         if linked is None or linked.project_id != project_id:
@@ -292,6 +297,8 @@ def research(project_id: str, body: ResearchRequest, db: Db, user: CurrentUser, 
     db.flush()
     db.add(ResearchQuery(project_id=project_id, job_id=job.id, conversation_id=body.conversation_id,
                          query=body.query, intent=plan(body.query).intent, domain=body.domain.value))
+    if body.record_message and body.conversation_id:
+        db.add(Message(conversation_id=body.conversation_id, body=body.query))
     db.commit()
     schedule(tasks, job.id)
     return job_data(job)

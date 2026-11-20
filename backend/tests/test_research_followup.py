@@ -25,7 +25,7 @@ def test_research_discovers_imports_cites_and_reuses_licensed_paper(client, monk
     for reused in (False, True):
         response = client.post(scope + "/research", json={"query": f"What hydrogen yield was reported in {DOI}?",
                                                           "discover": True, "domain": "chemical_engineering",
-                                                          "conversation_id": conversation})
+                                                          "conversation_id": conversation, "record_message": True})
         assert response.status_code == 202
         job_id = response.json()["id"]
         run = get_job(client, job_id)
@@ -42,6 +42,10 @@ def test_research_discovers_imports_cites_and_reuses_licensed_paper(client, monk
             history = db.scalar(select(ResearchQuery).where(ResearchQuery.job_id == job_id))
             assert history.conversation_id == conversation and history.domain == "chemical_engineering"
     assert len(calls) == 2 and len(client.get(scope + "/papers").json()) == 1
+    messages = client.get(BASE + f"/conversations/{conversation}").json()["messages"]
+    assert len(messages) == 2 and all(DOI in message["body"] for message in messages)
+    assert all(item["conversation_id"] == conversation and DOI in item["title"]
+               for item in client.get(scope + "/jobs").json())
 
 
 def test_verified_partial_results_are_available_before_model_synthesis(client, monkeypatch):

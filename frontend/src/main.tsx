@@ -1,19 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity as ActivityIcon, ArrowDownToLine, ArrowRight, ArrowUpRight, BookOpen, ChevronRight, CircleHelp, FileText, FlaskConical, FolderOpen, Layers3, LibraryBig, LogOut, Menu, Plus, Search, Settings, X } from 'lucide-react';
+import { Activity as ActivityIcon, ArrowDownToLine, ArrowRight, ArrowUpRight, BookOpen, ChevronRight, CircleHelp, Compass, FileText, FlaskConical, FolderOpen, Layers3, LibraryBig, LogOut, Menu, MessageSquare, Plus, Search, Settings, X } from 'lucide-react';
 import { api, json, safeUrl } from './api';
 import type { Account, Activity, Comparison, DocumentStructure, Evidence, Job, Named, Observation, Source, TableCell, Team } from './api';
+import { EmptyProject, ResearchComposer, ResearchExamples, ResearchWelcome } from './research';
+import '@fontsource-variable/dm-sans';
+import '@fontsource/instrument-serif/400.css';
+import '@fontsource/instrument-serif/400-italic.css';
 import './style.css';
 
 type View = 'Research' | 'Literature' | 'Library' | 'Data explorer' | 'Reports' | 'Activity' | 'Settings';
-const domains = [
-  ['auto', 'All disciplines'], ['chemical_engineering', 'Chemical engineering'], ['energy', 'Energy'],
-  ['computer_science', 'Computer science'], ['medicine', 'Medicine'], ['physics', 'Physics'],
-  ['biology', 'Biology'], ['environmental_science', 'Environmental science'],
-  ['materials_science', 'Materials science'], ['business', 'Business'],
-] as const;
-
 const views = [
   { name: 'Research', icon: FlaskConical }, { name: 'Literature', icon: Search },
   { name: 'Library', icon: LibraryBig }, { name: 'Data explorer', icon: Layers3 },
@@ -21,7 +18,7 @@ const views = [
 ] as const;
 
 function Brand() {
-  return <span className="brand"><span className="brand-mark"><FlaskConical size={19}/></span> ResearchPilot <span className="brand-ai">AI</span></span>;
+  return <span className="brand"><span className="brand-mark"><Compass size={20} strokeWidth={1.9}/></span><span>ResearchPilot <span className="brand-ai">AI</span></span></span>;
 }
 
 function Login({onAccount}: {onAccount: (account: Account) => void}) {
@@ -40,21 +37,38 @@ function Login({onAccount}: {onAccount: (account: Account) => void}) {
     finally { setBusy(false); }
   }
   return <main className="auth">
-    <div className="auth-inner">
-      <Brand/>
-      <div className="auth-copy"><h1>Follow the evidence.</h1><p>Discover scientific literature, compare findings, and trace every excerpt to its source.</p></div>
-      <form onSubmit={submit} className="card auth-form">
-        <h2>{register ? 'Create your account' : 'Sign in to your workspace'}</h2>
-        <label>Email<input type="email" name="email" autoComplete="email" required/></label>
-        <label>Password<input name="password" type="password" minLength={12} maxLength={128}
-          autoComplete={register ? 'new-password' : 'current-password'} required/></label>
-        {error && <p role="alert" className="error">{error}</p>}
-        <button className="primary" disabled={busy}>{register ? 'Create account' : 'Sign in'} <ArrowRight size={17}/></button>
-        <button type="button" className="text-button" onClick={() => { setRegister(!register); setError(''); }}>
-          {register ? 'I already have an account' : 'Create an account'}
-        </button>
-      </form>
+    <div className="auth-main">
+      <header className="auth-nav"><Brand/><a href="https://github.com/Abhinav072004/ResearchPilot-AI"
+        target="_blank" rel="noreferrer">Source code <ArrowUpRight size={15}/></a></header>
+      <div className="auth-inner">
+        <div className="auth-copy">
+          <h1>{register ? 'Create your account' : 'Welcome back'}</h1>
+          <p>{register ? 'Set up your workspace to organize papers, questions, and reports.' : 'Sign in to your research workspace.'}</p>
+        </div>
+        <form onSubmit={submit} className="auth-form">
+          <label>Email<input type="email" name="email" placeholder="you@university.edu" autoComplete="email" required/></label>
+          <label>Password<input name="password" type="password" minLength={12} maxLength={128}
+            placeholder={register ? 'At least 12 characters' : 'Your password'}
+            autoComplete={register ? 'new-password' : 'current-password'} required/></label>
+          {error && <p role="alert" className="error">{error}</p>}
+          <button className="primary auth-submit" disabled={busy}>
+            {register ? 'Create account' : 'Sign in'} <ArrowRight size={17}/>
+          </button>
+          <div className="auth-switch">
+            <span>{register ? 'Already have an account?' : 'New to ResearchPilot?'}</span>
+            <button type="button" className="text-button" onClick={() => { setRegister(!register); setError(''); }}>
+              {register ? 'Sign in instead' : 'Create an account'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
+    <section className="auth-hero" aria-label="About ResearchPilot">
+      <div className="auth-hero-copy">
+        <h2>Follow <em>the evidence.</em></h2>
+        <p>Ask questions about scientific literature, inspect the original passages, and export your findings with citations.</p>
+      </div>
+    </section>
   </main>;
 }
 
@@ -97,10 +111,12 @@ function ResultsTable({rows, inspect}: {rows: Observation[]; inspect: (id: strin
 function Workspace({account, onLogout}: {account: Account; onLogout: () => void}) {
   const [view, setView] = useState<View>('Research');
   const [projects, setProjects] = useState<Named[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [project, setProject] = useState('');
   const [projectForm, setProjectForm] = useState(false);
   const [menu, setMenu] = useState(false);
   const [query, setQuery] = useState('');
+  const [discover, setDiscover] = useState(false);
   const [job, setJob] = useState<Job>();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
@@ -115,6 +131,8 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
   const [observations, setObservations] = useState<Observation[]>([]);
   const [comparison, setComparison] = useState<Comparison>();
   const [selected, setSelected] = useState<Evidence>();
+  const closeEvidence = useRef<HTMLButtonElement>(null);
+  const evidenceTrigger = useRef<HTMLElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -125,6 +143,11 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
   const [messages, setMessages] = useState<{id: string; body: string}[]>([]);
   const scope = '/projects/' + project;
   const activeProject = projects.find(p => p.id === project);
+  const activeResearch = job?.kind === 'research' ? job : undefined;
+  const researchBusy = ['queued', 'running', 'awaiting_approval'].includes(activeResearch?.status ?? '');
+  const recentResearch = jobs.filter(row => row.kind === 'research').slice(0, 5);
+  const earlierMessages = activeResearch?.title && messages.at(-1)?.body === activeResearch.title
+    ? messages.slice(0, -1) : messages;
 
   async function run(work: () => Promise<void>) {
     setBusy(true);
@@ -138,7 +161,9 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
     let active = true;
     api<Named[]>('/projects').then(rows => {
       if (active) { setProjects(rows); setProject(rows[0]?.id ?? ''); }
-    }).catch(err => { if (active) setError(err.message); });
+    }).catch(err => { if (active) setError(err.message); }).finally(() => {
+      if (active) setProjectsLoading(false);
+    });
     return () => { active = false; };
   }, []);
 
@@ -159,8 +184,10 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
         const [rows, members] = await Promise.all([api<typeof usage>(scope + '/usage'), api<Team>(scope + '/team')]);
         if (active) { setUsage(rows); setTeam(members); }
       } else if (view === 'Research') {
-        const rows = await api<Named[]>(scope + '/conversations');
-        if (active) setConversations(rows);
+        const [rows, history] = await Promise.all([
+          api<Named[]>(scope + '/conversations'), api<Job[]>(scope + '/jobs'),
+        ]);
+        if (active) { setConversations(rows); setJobs(history); }
       }
     };
     load().catch(err => { if (active) setError(err.message); });
@@ -169,19 +196,36 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
 
   useEffect(() => {
     if (!job || !['queued', 'running'].includes(job.status)) return;
+    let active = true;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     const stream = new EventSource('/api/v1/jobs/' + job.id + '/events');
-    stream.onmessage = event => setJob(JSON.parse(event.data));
-    stream.onerror = () => {
-      stream.close();
-      api<Job>('/jobs/' + job.id).then(setJob).catch(err => setError(err.message));
-    };
-    return () => stream.close();
+    stream.onmessage = event => { if (active) setJob(JSON.parse(event.data)); };
+    async function poll() {
+      try {
+        const current = await api<Job>('/jobs/' + job!.id);
+        if (!active) return;
+        setJob(current);
+        if (['queued', 'running'].includes(current.status)) retry = setTimeout(poll, 2000);
+      } catch (err) {
+        if (active) setError((err as Error).message);
+      }
+    }
+    stream.onerror = () => { stream.close(); if (active) void poll(); };
+    return () => { active = false; stream.close(); if (retry) clearTimeout(retry); };
   }, [job?.id, job?.status]);
+
+  useEffect(() => {
+    if (!selected) return;
+    closeEvidence.current?.focus();
+    const trigger = evidenceTrigger.current;
+    return () => { if (trigger?.isConnected) trigger.focus(); };
+  }, [selected?.id]);
 
   function switchProject(id: string) {
     setProject(id); setJob(undefined); setSelected(undefined); setPassages([]); setStructure(undefined); setTeam(undefined);
     setComparison(undefined); setActivity([]); setJobs([]); setPapers([]); setObservations([]);
     setConversation(''); setConversations([]); setMessages([]); setUsage([]); setNotice(''); setError('');
+    setQuery(''); setDiscover(false);
   }
 
   function navigate(to: View) {
@@ -192,23 +236,61 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     void run(async () => {
-      const entry = await api<Named>('/projects', json({title: data.get('title')}));
-      setProjects(items => [...items, entry]);
-      switchProject(entry.id);
+      await createProject(String(data.get('title')));
+      if (!project) {
+        setQuery(query);
+        setDiscover(discover);
+      }
       setProjectForm(false);
     });
   }
 
+  async function createProject(title: string) {
+    const entry = await api<Named>('/projects', json({title}));
+    setProjects(items => [...items, entry]);
+    switchProject(entry.id);
+    return entry.id;
+  }
+
+  function focusComposer() {
+    requestAnimationFrame(() => document.getElementById('question')?.focus());
+  }
+
+  function newQuestion() {
+    navigate('Research');
+    setJob(undefined); setConversation(''); setMessages([]); setQuery(''); setDiscover(false);
+    setSelected(undefined);
+    focusComposer();
+  }
+
   function startResearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const question = query.trim();
+    if (question.length < 2 || researchBusy) return;
     const data = new FormData(event.currentTarget);
     void run(async () => {
-      if (conversation) {
-        await api('/conversations/' + conversation + '/messages', json({body: query}));
-        const item = await api<{messages: typeof messages}>('/conversations/' + conversation);
-        setMessages(item.messages);
+      let id = project;
+      if (!id) {
+        id = await createProject(question.slice(0, 80));
+        setQuery(question);
+        setDiscover(data.has('discover'));
       }
-      setJob(await api<Job>(scope + '/research', json({query, conversation_id: conversation || null, domain: data.get('domain'), discover: data.has('discover'), external_model: data.has('model') || data.has('synthesis'), synthesize: data.has('synthesis')})));
+      const root = '/projects/' + id;
+      let thread = conversation;
+      if (!thread) {
+        const item = await api<Named>(root + '/conversations', json({title: question.slice(0, 100)}));
+        setConversations(rows => rows.some(row => row.id === item.id) ? rows : [item, ...rows]);
+        setConversation(item.id);
+        thread = item.id;
+      }
+      const entry = await api<Job>(root + '/research', json({
+        query: question, conversation_id: thread, record_message: true, domain: data.get('domain') || 'auto',
+        discover: data.has('discover'), external_model: data.has('model') || data.has('synthesis'),
+        synthesize: data.has('synthesis'),
+      }));
+      setMessages(rows => [...rows, {id: entry.id, body: question}]);
+      setJob(entry); setQuery('');
+      setJobs(rows => [entry, ...rows.filter(row => row.id !== entry.id)]);
     });
   }
 
@@ -229,6 +311,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
   }
 
   function inspect(id: string) {
+    evidenceTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     void run(async () => setSelected(await api<Evidence>('/evidence/' + id)));
   }
 
@@ -243,11 +326,24 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
     });
   }
 
-  function showRun(id: string) {
+  function showRun(id: string, destination?: View) {
     void run(async () => {
       const [entry, events] = await Promise.all([api<Job>('/jobs/' + id), api<Activity[]>('/jobs/' + id + '/timeline')]);
       setJob(entry); setActivity(events);
-      if (entry.kind === 'research' && view === 'Reports') navigate('Research');
+      const nextView = destination ?? (entry.kind === 'research' && view === 'Reports' ? 'Research' : view);
+      navigate(nextView);
+      if (entry.kind === 'research' && nextView === 'Research') {
+        const thread = entry.conversation_id || '';
+        setConversation(thread);
+        setMessages([]);
+        if (thread) {
+          const detail = await api<{messages: typeof messages}>('/conversations/' + thread).catch(() => null);
+          if (detail) {
+            const position = detail.messages.map(message => message.body).lastIndexOf(entry.title || '');
+            setMessages(position >= 0 ? detail.messages.slice(0, position + 1) : []);
+          }
+        }
+      }
     });
   }
 
@@ -273,24 +369,41 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
   };
 
   return <div className="shell">
-    <aside className={menu ? 'sidebar open' : 'sidebar'}>
+    {menu && <button className="sidebar-scrim" aria-label="Close menu" onClick={() => setMenu(false)}/>}
+    <aside id="workspace-sidebar" className={menu ? 'sidebar open' : 'sidebar'}>
       <Brand/>
+      <button className="new-question" onClick={newQuestion} disabled={busy}><Plus size={18}/> New question</button>
       <div className="side-group"><div className="side-label">Workspace</div>
         {views.map(({name, icon: Icon}) => <button key={name} className={view === name ? 'nav active' : 'nav'}
           aria-current={view === name ? 'page' : undefined} onClick={() => navigate(name)}><Icon size={17}/>{name}</button>)}
       </div>
-      <div className="side-group"><div className="side-label row">Projects <button className="icon" aria-label="New project" onClick={() => setProjectForm(true)}><Plus size={17}/></button></div>
+      <div className="side-group"><div className="side-label row">Projects <button className="icon" aria-label="New project"
+        onClick={() => { navigate('Research'); setProjectForm(true); }}><Plus size={17}/></button></div>
         {projects.map(row => <button key={row.id} className={row.id === project ? 'nav active' : 'nav'}
-          onClick={() => { switchProject(row.id); navigate('Research'); }}><FolderOpen size={17}/>{row.title}</button>)}
-        {!projects.length && <button className="nav" onClick={() => setProjectForm(true)}><Plus size={17}/> New project</button>}
+          disabled={busy} onClick={() => { switchProject(row.id); navigate('Research'); }}><FolderOpen size={17}/>{row.title}</button>)}
       </div>
-      <div className="side-bottom"><button className="nav" onClick={() => navigate('Settings')}><Settings size={17}/> Settings</button><span>{account.email}</span></div>
+      {!!recentResearch.length && <div className="side-group"><div className="side-label">Recent research</div>
+        {recentResearch.map(item => <button key={item.id} className={activeResearch?.id === item.id ? 'nav recent-item active' : 'nav recent-item'}
+          title={item.title || 'Research results'} disabled={busy} onClick={() => showRun(item.id, 'Research')}>
+          <MessageSquare size={16}/><span>{item.title || 'Research results'}</span>
+        </button>)}
+      </div>}
+      <div className="side-bottom">
+        <button className="nav" onClick={() => navigate('Settings')}><Settings size={17}/> Settings</button>
+        <div className="account-strip"><span className="account-avatar" aria-hidden="true">{account.email.slice(0, 2).toUpperCase()}</span>
+          <span title={account.email}>{account.email}</span></div>
+      </div>
     </aside>
     <div className="workspace">
-      <header className="topbar"><button className="icon menu" aria-label="Toggle menu" onClick={() => setMenu(!menu)}><Menu size={21}/></button>
-        <span>{activeProject?.title ?? 'Workspace'}</span><ChevronRight size={14}/><strong>{view}</strong></header>
-      <main className="content">
-        <header className="page-heading"><h1>{headings[view][0]}</h1><p>{headings[view][1]}</p></header>
+      <header className="topbar">
+        <button className="icon menu" aria-label="Toggle menu" aria-expanded={menu} aria-controls="workspace-sidebar"
+          onClick={() => setMenu(!menu)}><Menu size={21}/></button>
+        <div className="breadcrumb"><span>{activeProject?.title ?? 'Workspace'}</span><ChevronRight size={14}/><strong>{view}</strong></div>
+        {view === 'Research' && project && <button className="topbar-action" onClick={() => navigate('Library')}>
+          <LibraryBig size={17}/> <span>Project library</span></button>}
+      </header>
+      <main className={view === 'Research' ? 'content research-content' : 'content'}>
+        {view !== 'Research' && <header className="page-heading"><h1>{headings[view][0]}</h1><p>{headings[view][1]}</p></header>}
         {error && <p role="alert" className="error">{error}</p>}
         {notice && <p role="status" className="notice">{notice}</p>}
         {projectForm && panel(<form className="inline" onSubmit={newProject}>
@@ -298,35 +411,29 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
           <button className="primary" disabled={busy}>Create project</button>
           <button type="button" onClick={() => setProjectForm(false)}>Cancel</button>
         </form>)}
-        {!project && view !== 'Literature' && view !== 'Settings' && panel(<div className="empty">
-          <FolderOpen size={31}/><h2>Create a research project</h2><p>Projects hold your documents, questions, and reports.</p>
-          <button className="primary" onClick={() => setProjectForm(true)}><Plus size={16}/> New project</button></div>)}
-        {view === 'Research' && project && <>
-          {panel(<form onSubmit={startResearch} className="question-form">
-            <label htmlFor="question">Research question</label>
-            <textarea id="question" value={query} onChange={event => setQuery(event.target.value)}
-              placeholder="What evidence supports your research question?" required minLength={2} maxLength={1000}/>
-            <label>Research domain<select name="domain">{domains.map(([value, label]) =>
-              <option key={value} value={value}>{label}</option>)}</select></label>
-            <div className="form-footer"><div className="actions">
-              <label className="check"><input type="checkbox" name="discover"/> Discover and import licensed papers</label>
-              <label className="check"><input type="checkbox" name="model"/> External reranking</label>
-              <label className="check"><input type="checkbox" name="synthesis"/> External synthesis</label>
-            </div><button className="primary" disabled={busy || ['queued', 'running'].includes(job?.status ?? '')}>Run research <ArrowRight size={17}/></button></div>
-          </form>)}
-          <div className="inline compact">
-            <label>Conversation<select value={conversation} onChange={event => {
-              const id = event.target.value; setConversation(id); setMessages([]);
-              if (id) void run(async () => setMessages((await api<{messages: typeof messages}>('/conversations/' + id)).messages));
-            }}><option value="">Unsaved question</option>{conversations.map(row => <option key={row.id} value={row.id}>{row.title}</option>)}</select></label>
-            <button disabled={busy} onClick={() => void run(async () => {
-              const item = await api<Named>(scope + '/conversations', json({title: query.trim().slice(0, 150) || 'New conversation'}));
-              setConversations(rows => [...rows, item]); setConversation(item.id); setMessages([]);
-            })}><Plus size={16}/> Conversation</button>
-          </div>
-          {messages.map(message => <p className="history" key={message.id}>{message.body}</p>)}
-          {job?.kind === 'research' && <section className="stack">
-            <div className="row"><h2>Research results</h2><span className="status" role="status">{job.status.replaceAll('_', ' ')}</span></div>
+        {!project && view !== 'Literature' && view !== 'Settings' && view !== 'Research' && !projectForm &&
+          <EmptyProject onCreate={() => setProjectForm(true)}/>}
+        {view === 'Research' && <>
+          {!activeResearch && !messages.length && <ResearchWelcome/>}
+          {!activeResearch && messages.length > 0 && <div className="conversation-space">
+            {messages.map(message => <p className="history" key={message.id}>{message.body}</p>)}
+          </div>}
+          {activeResearch && <>
+            <h1 className="sr-only">Research workspace</h1>
+            <div className="conversation-space">
+              {earlierMessages.map(message => <p className="history" key={message.id}>{message.body}</p>)}
+              {activeResearch.title && <p className="history current-question">{activeResearch.title}</p>}
+            </div>
+          </>}
+          {job?.kind === 'research' && <section className="research-answer stack">
+            <div className="answer-heading"><span className="answer-mark"><Compass size={19}/></span>
+              <h2>Research results</h2>
+              <span className={researchBusy ? 'status working' : 'status'} role="status">
+                {job.status === 'running' ? 'Researching' : job.status.replaceAll('_', ' ')}
+              </span></div>
+            {researchBusy && job.status !== 'awaiting_approval' && !job.result?.claims?.length &&
+              <p className="researching"><span className="spinner" aria-hidden="true"/>
+                {job.status === 'queued' ? 'Waiting for a research worker' : 'Looking for supporting evidence'}</p>}
             {job.error && <p className="error" role="alert">{job.error}</p>}
             {job.status === 'awaiting_approval' && panel(<><p>{job.result?.approval?.purpose}</p><div className="actions">
               {[true, false].map(approved => <button key={String(approved)} disabled={busy} onClick={() => void run(async () =>
@@ -341,10 +448,34 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
                   <BookOpen size={15}/> [{index + 1}{claim.supporting_evidence ? '.' + (sourceIndex + 1) : ''}] {source.title} · {source.section}</button>)}
             </article>)}
             {job.result?.gaps?.map(gap => <p key={gap} className="notice"><CircleHelp size={16}/> {gap}</p>)}
+            {Object.entries(job.result?.comparisons ?? {}).map(([metric, result]) => <article key={metric} className="card">
+              <h3>{metric}</h3><p className="muted">{result.interpretation}</p>
+              {result.matched.map((group, i) => <ResultsTable key={i} rows={group.rows} inspect={inspect}/>)}
+              {!result.matched.length && <p className="muted">No comparable observations found.</p>}
+            </article>)}
             {job.result?.metadata_leads?.length ? <><h3>Verified metadata leads</h3><SourceList rows={job.result.metadata_leads} onDoi={verify}/></> : null}
             {job.status === 'succeeded' && <div className="actions"><button className="primary" disabled={busy} onClick={createReport}>Generate report <ArrowRight size={16}/></button>
-              <button onClick={() => {navigate('Activity'); showRun(job.id);}}>View activity</button></div>}
+              <button onClick={() => showRun(job.id, 'Activity')}><ActivityIcon size={16}/> View activity</button></div>}
           </section>}
+          <div className={activeResearch ? 'composer-dock' : 'composer-start'}>
+            <ResearchComposer query={query} onQuery={setQuery} discover={discover} onDiscover={setDiscover}
+              busy={busy || researchBusy || projectsLoading} onSubmit={startResearch} onSources={() => navigate('Library')}/>
+            {project && conversations.length > 0 && <label className="conversation-picker">
+              <MessageSquare size={14}/><span>Conversation</span><select value={conversation} onChange={event => {
+                const id = event.target.value;
+                setConversation(id); setMessages([]); setJob(undefined);
+                const lastRun = id && jobs.find(item => item.kind === 'research' && item.conversation_id === id);
+                if (lastRun) showRun(lastRun.id, 'Research');
+                else if (id) void run(async () => setMessages((await api<{messages: typeof messages}>('/conversations/' + id)).messages));
+              }}><option value="">New conversation</option>{conversations.map(row =>
+                <option key={row.id} value={row.id}>{row.title}</option>)}</select>
+            </label>}
+          </div>
+          {!activeResearch && !messages.length && <>
+            <ResearchExamples onExample={example => { setQuery(example.question); setDiscover(example.discover); focusComposer(); }}/>
+            {!projectsLoading && !project && !projectForm && <button className="text-button create-project-link"
+              onClick={() => setProjectForm(true)}><FolderOpen size={16}/> New project</button>}
+          </>}
         </>}
         {view === 'Literature' && <>
           {panel(<form className="inline" onSubmit={event => {
@@ -419,7 +550,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
         {(view === 'Activity' || view === 'Reports') && project && <>
           {view === 'Reports' && job?.kind === 'report' && <p role="status" className="notice">Report {job.status}{job.error && ' · ' + job.error}</p>}
           {jobs.filter(entry => view === 'Activity' || entry.kind !== 'ingest').map(entry => <article className="card record" key={entry.id}>
-            <div><h3>{entry.kind}</h3><span className="status">{entry.status.replaceAll('_', ' ')}</span></div><div className="actions">
+            <div><h3>{entry.title || entry.kind}</h3><span className="status">{entry.status.replaceAll('_', ' ')}</span></div><div className="actions">
               {view === 'Reports' && entry.kind === 'report' && entry.status === 'succeeded' ?
                 <>
                   {['markdown', 'docx', 'pdf'].map(format => <a key={format} href={`/api/v1/reports/${entry.id}/export?format=${format}`}><ArrowDownToLine size={14}/>{format.toUpperCase()}</a>)}
@@ -496,8 +627,10 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
         })}><LogOut size={16}/> Sign out</button></>)}
       </main>
     </div>
-    {selected && <aside className="inspector" aria-label="Evidence inspector">
-      <div className="row"><h2>Evidence inspector</h2><button className="icon" aria-label="Close evidence" onClick={() => setSelected(undefined)}><X size={20}/></button></div>
+    {selected && <aside className="inspector" aria-label="Evidence inspector" onKeyDown={event => {
+      if (event.key === 'Escape') setSelected(undefined);
+    }}>
+      <div className="row"><h2>Evidence inspector</h2><button ref={closeEvidence} className="icon" aria-label="Close evidence" onClick={() => setSelected(undefined)}><X size={20}/></button></div>
       <h3>{selected.title}</h3>
       <p className="muted">{[selected.metadata.authors?.join(', '), selected.metadata.year, selected.metadata.journal].filter(Boolean).join(' · ')}</p>
       <p className="muted">{[selected.section, selected.page ? 'p. ' + selected.page : selected.anchor.xml_path, selected.access.replaceAll('_', ' ')].filter(Boolean).join(' · ')}</p>
@@ -517,7 +650,7 @@ function Workspace({account, onLogout}: {account: Account; onLogout: () => void}
 function App() {
   const [account, setAccount] = useState<Account | null>();
   useEffect(() => { api<Account>('/auth/me').then(setAccount).catch(() => setAccount(null)); }, []);
-  if (account === undefined) return <main className="auth" aria-busy="true"><Brand/></main>;
+  if (account === undefined) return <main className="loading-shell" aria-busy="true"><Brand/></main>;
   return account ? <Workspace account={account} onLogout={() => setAccount(null)}/> : <Login onAccount={setAccount}/>;
 }
 

@@ -30,8 +30,11 @@ def smoke(origin, executable):
         page.get_by_role("button", name="Upload paper").click()
         expect(page.get_by_text("Ingestion succeeded")).to_be_visible()
         page.get_by_role("button", name="Research", exact=True).click()
-        page.get_by_label("Research question").fill("What is albedo?")
+        page.get_by_role("textbox", name="Research question", exact=True).fill("What is albedo?")
         page.get_by_role("button", name="Run research").click()
+        expect(page.get_by_text(passage)).to_be_visible()
+        page.reload(wait_until="networkidle")
+        page.get_by_role("button", name="What is albedo?", exact=True).click()
         expect(page.get_by_text(passage)).to_be_visible()
         page.get_by_role("button", name="[1] Synthetic optics · Document").click()
         inspector = page.get_by_role("complementary", name="Evidence inspector")
@@ -42,8 +45,16 @@ def smoke(origin, executable):
         with page.expect_download() as download:
             page.get_by_role("link", name="PDF", exact=True).click()
         assert download.value.suggested_filename == "research-report.pdf"
+        page.set_viewport_size({"width": 390, "height": 844})
+        page.get_by_role("button", name="Toggle menu").click()
+        page.get_by_role("button", name="New question").click()
+        expect(page.get_by_role("heading", name="What are you researching?")).to_be_visible()
+        page.get_by_role("button", name="Find a published source").click()
+        assert "10.1371/journal.pmed.1000097" in page.get_by_role("textbox", name="Research question", exact=True).input_value()
+        expect(page.get_by_label("Search literature")).to_be_checked()
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
         browser.close()
-    print("Browser smoke passed registration, project creation, ingestion, cited research, evidence inspection and PDF download.")
+    print("Browser smoke passed signup, ingestion, saved research, citations, report export and mobile navigation.")
 
 
 if __name__ == "__main__":

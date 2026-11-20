@@ -47,6 +47,8 @@ class JobResponse(BaseModel):
     kind: Literal["ingest", "research", "report", "purge"]
     status: Literal["queued", "running", "awaiting_approval", "succeeded", "failed", "rejected"]
     error: str | None
+    title: str | None = None
+    conversation_id: str | None = None
     created: float
     result: dict | None
 
