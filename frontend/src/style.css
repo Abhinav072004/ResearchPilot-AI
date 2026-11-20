@@ -258,6 +258,7 @@ p + button { margin-top: .65rem; }
   padding: 2.4rem clamp(1.2rem, 4vw, 3.6rem) 4rem;
   margin: 0 auto;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.04rem;
 }
 .content > button { justify-self: start; }
@@ -270,7 +271,7 @@ p + button { margin-top: .65rem; }
   padding: 1.2rem;
   box-shadow: 0 2px 8px #242b4410;
 }
-.stack { display: grid; gap: 1.04rem; }
+.stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.04rem; }
 label { display: grid; gap: .34rem; font-size: .89rem; font-weight: 670; }
 input:not([type=checkbox]), textarea, select {
   background: #fdfdff;
@@ -358,7 +359,7 @@ th { color: #434c6f; background: #f1f3fb; }
   outline: none;
 }
 .composer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: .55rem; padding: .16rem .17rem .12rem; }
-.composer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.composer-tools { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: .35rem; }
 .tool-button {
   flex-shrink: 0;
   display: inline-flex;
@@ -401,7 +402,7 @@ th { color: #434c6f; background: #f1f3fb; }
 .conversation-picker {
   position: relative;
   min-width: 0;
-  max-width: min(100%, 430px);
+  width: min(100%, 430px);
   display: flex;
   align-items: center;
   gap: .35rem;
